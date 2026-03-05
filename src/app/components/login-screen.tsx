@@ -51,6 +51,9 @@ export function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
             </label>
             <input
               type="email"
+              autoComplete="off"
+              data-lpignore="true"
+              data-form-type="other"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@beispiel.de"
@@ -65,6 +68,9 @@ export function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
             </label>
             <input
               type="password"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Passwort eingeben"

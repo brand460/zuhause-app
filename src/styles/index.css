@@ -2,6 +2,18 @@
 @import './tailwind.css';
 @import './theme.css';
 
+/* Global: Text-Selektion deaktivieren (Mobile UX) */
+* {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Ausnahmen: Editierbare Elemente bleiben selektierbar */
+input, textarea, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* PWA: Pull-to-Refresh deaktivieren & App-Shell fixieren */
 html, body {
   overscroll-behavior: none;

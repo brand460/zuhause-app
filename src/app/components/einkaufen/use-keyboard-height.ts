@@ -1,15 +1,27 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 /**
  * Hook that tracks virtual keyboard height using the visualViewport API.
  * Returns the current keyboard height in pixels (0 when keyboard is hidden).
  *
- * Works by comparing `window.innerHeight` (which stays stable when the keyboard
- * opens on most mobile browsers) with `visualViewport.height` (which shrinks).
+ * Uses visualViewport.height + offsetTop to precisely compute the keyboard
+ * offset, ensuring no gap between the input bar and the keyboard.
  */
 export function useKeyboardHeight(): number {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const initialHeightRef = useRef<number>(0);
+
+  const update = useCallback(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const fullHeight = initialHeightRef.current || window.innerHeight;
+    // Account for both viewport shrinkage and any scroll offset (iOS Safari)
+    const kb = Math.max(0, Math.round(fullHeight - vv.height - vv.offsetTop));
+
+    // Only treat as keyboard if > 80px (ignore small viewport changes like URL bar)
+    setKeyboardHeight(kb > 80 ? kb : 0);
+  }, []);
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -18,18 +30,6 @@ export function useKeyboardHeight(): number {
     // Capture the initial full height on mount (before any keyboard)
     initialHeightRef.current = window.innerHeight;
 
-    const update = () => {
-      // On iOS Safari, window.innerHeight stays stable when keyboard opens,
-      // but visualViewport.height shrinks.
-      // On Android Chrome, both may change, but the difference still works.
-      const fullHeight = initialHeightRef.current || window.innerHeight;
-      const viewportHeight = vv.height;
-      const kb = Math.max(0, Math.round(fullHeight - viewportHeight));
-
-      // Only treat as keyboard if > 100px (ignore small viewport changes like URL bar)
-      setKeyboardHeight(kb > 100 ? kb : 0);
-    };
-
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
 
@@ -37,7 +37,7 @@ export function useKeyboardHeight(): number {
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
     };
-  }, []);
+  }, [update]);
 
   return keyboardHeight;
 }

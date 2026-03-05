@@ -52,6 +52,9 @@ export function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps) {
             </label>
             <input
               type="text"
+              autoComplete="off"
+              data-lpignore="true"
+              data-form-type="other"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Dein Name"
@@ -66,6 +69,9 @@ export function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps) {
             </label>
             <input
               type="email"
+              autoComplete="off"
+              data-lpignore="true"
+              data-form-type="other"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@beispiel.de"
@@ -80,6 +86,9 @@ export function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps) {
             </label>
             <input
               type="password"
+              autoComplete="new-password"
+              data-lpignore="true"
+              data-form-type="other"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Mind. 6 Zeichen"

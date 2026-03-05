@@ -585,27 +585,40 @@ const restrictToVerticalAxis: any = ({ transform }: any) => ({
   x: 0,
 });
 
-// ── Restrict drag within the scrollable ancestor ──────────────────
-const restrictToContainer: any = ({
-  transform,
-  draggingNodeRect,
-  scrollableAncestorRects,
-}: any) => {
-  const containerRect = scrollableAncestorRects[0];
-  if (!draggingNodeRect || !containerRect) {
-    return { ...transform, x: 0 };
-  }
-  const minY = containerRect.top - draggingNodeRect.top;
-  const maxY =
-    containerRect.top +
-    containerRect.height -
-    (draggingNodeRect.top + draggingNodeRect.height);
-  return {
-    ...transform,
-    x: 0,
-    y: Math.min(Math.max(transform.y, minY), maxY),
+// ── Factory: restrict drag between store selector and checked section ──
+function createRestrictToListBounds(
+  storeSelectorRef: React.RefObject<HTMLDivElement | null>,
+  checkedSectionRef: React.RefObject<HTMLDivElement | null>,
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>,
+) {
+  return ({ transform, draggingNodeRect }: any) => {
+    if (!draggingNodeRect) return { ...transform, x: 0 };
+
+    // Top bound: bottom edge of store selector
+    const selectorRect = storeSelectorRef.current?.getBoundingClientRect();
+    const topBound = selectorRect ? selectorRect.bottom : 0;
+
+    // Bottom bound: top edge of checked section, or bottom of scroll container
+    const checkedRect = checkedSectionRef.current?.getBoundingClientRect();
+    const scrollRect = scrollContainerRef.current?.getBoundingClientRect();
+    // If checked section has content (height > 0), use its top; otherwise use scroll container bottom
+    const bottomBound =
+      checkedRect && checkedRect.height > 0
+        ? checkedRect.top
+        : scrollRect
+          ? scrollRect.bottom
+          : window.innerHeight;
+
+    const minY = topBound - draggingNodeRect.top;
+    const maxY = bottomBound - (draggingNodeRect.top + draggingNodeRect.height);
+
+    return {
+      ...transform,
+      x: 0,
+      y: Math.min(Math.max(transform.y, minY), maxY),
+    };
   };
-};
+}
 
 // ── Unit helpers ───────────────────────────────────────────────────
 type UnitType = null | "g" | "kg" | "ml" | "L";
@@ -664,8 +677,8 @@ function QuantityDrawer({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Auto-focus the input after the animation
-    const t = setTimeout(() => inputRef.current?.focus(), 100);
+    // Focus input AFTER the 300ms slide-up animation completes
+    const t = setTimeout(() => inputRef.current?.focus(), 350);
     return () => clearTimeout(t);
   }, []);
 
@@ -708,10 +721,11 @@ function QuantityDrawer({
       <div className="absolute inset-0 bg-black/40" onClick={handleBackdropClick} />
       <motion.div
         className="relative bg-white rounded-t-2xl px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+        style={{ height: 160, minHeight: 160 }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
-        transition={{ type: "spring", damping: 30, stiffness: 400 }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
       >
         {/* Drag handle */}
         <div className="flex justify-center mb-4">
@@ -724,19 +738,29 @@ function QuantityDrawer({
           {/* Quantity input */}
           <input
             ref={inputRef}
-            type="text"
+            type="tel"
             inputMode="decimal"
+            autoComplete="off"
+            autoCorrect="off"
+            data-lpignore="true"
+            data-form-type="other"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             className="w-20 h-11 rounded-xl border border-gray-200 text-center text-sm font-semibold text-gray-900 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
           />
 
-          {/* Unit segmented control */}
-          <div className="flex-1 flex bg-gray-100 rounded-xl p-1 gap-0.5">
+          {/* Unit segmented control — prevent focus steal to keep keyboard open */}
+          <div
+            className="flex-1 flex bg-gray-100 rounded-xl p-1 gap-0.5"
+            onMouseDown={(e) => e.preventDefault()}
+            onPointerDown={(e) => e.preventDefault()}
+          >
             {UNITS.map((u) => (
               <button
                 key={u.label}
+                onMouseDown={(e) => e.preventDefault()}
+                onPointerDown={(e) => e.preventDefault()}
                 onClick={() => handleUnitChange(u.value)}
                 className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${
                   unit === u.value
@@ -1184,7 +1208,11 @@ function CategorySortModal({
               <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
               <input
                 ref={inputRef}
-                type="text"
+                type="search"
+                autoComplete="off"
+                autoCorrect="off"
+                data-lpignore="true"
+                data-form-type="other"
                 value={newCat}
                 onChange={(e) => {
                   setNewCat(e.target.value);
@@ -1389,7 +1417,16 @@ function AddItemBar({
         {quickChips.length > 0 && (
           <div
             className="flex gap-2 px-4 pt-2.5 pb-1 overflow-x-auto scrollbar-hide"
-            style={{ WebkitOverflowScrolling: "touch" }}
+            style={{
+              WebkitOverflowScrolling: "touch",
+              opacity: query.length > 0 ? 0 : 1,
+              maxHeight: query.length > 0 ? 0 : 100,
+              paddingTop: query.length > 0 ? 0 : undefined,
+              paddingBottom: query.length > 0 ? 0 : undefined,
+              pointerEvents: query.length > 0 ? "none" : "auto",
+              transition: "opacity 200ms, max-height 200ms, padding 200ms",
+              overflow: query.length > 0 ? "hidden" : undefined,
+            }}
           >
             {quickChips.map((chip) => (
               <button
@@ -1435,7 +1472,10 @@ function AddItemBar({
                     </button>
                   );
                 })}
-                {searchResults.length === 0 && query.trim() && (
+                {query.trim() &&
+                  !searchResults.some(
+                    (r) => r.name.toLowerCase() === query.trim().toLowerCase()
+                  ) && (
                   <button
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
@@ -1462,7 +1502,13 @@ function AddItemBar({
             <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
             <input
               ref={inputRef}
-              type="text"
+              type="search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-form-type="other"
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
@@ -1664,7 +1710,13 @@ function AddStoreModal({
             <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
             <input
               autoFocus
-              type="text"
+              type="search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-form-type="other"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Laden suchen..."
@@ -1801,6 +1853,8 @@ export function EinkaufenScreen() {
   const customCatSaveTimeout = useRef<ReturnType<typeof setTimeout>>();
   const settingsSaveTimeout = useRef<ReturnType<typeof setTimeout>>();
   const storeSelectorRef = useRef<HTMLDivElement>(null);
+  const checkedSectionRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastLocalChangeRef = useRef<number>(0);
   const bottomBarRef = useRef<HTMLDivElement>(null);
   const [bottomBarHeight, setBottomBarHeight] = useState(56);
@@ -2382,7 +2436,11 @@ export function EinkaufenScreen() {
     [sortedStoreItems, updateItems]
   );
 
-  const itemModifiers = useMemo(() => [restrictToContainer], []);
+  const restrictToListBounds = useMemo(
+    () => createRestrictToListBounds(storeSelectorRef, checkedSectionRef, scrollContainerRef),
+    []
+  );
+  const itemModifiers = useMemo(() => [restrictToListBounds], [restrictToListBounds]);
 
   const sortableItemIds = useMemo(
     () => sortedStoreItems.map((i) => i.id),
@@ -2459,7 +2517,8 @@ export function EinkaufenScreen() {
 
       {/* Scrollable list area — dynamic padding-bottom for the fixed input bar */}
       <div
-        className="flex-1 min-h-0 overflow-y-auto"
+        ref={scrollContainerRef}
+        className="flex-1 min-h-0 overflow-y-auto flex flex-col"
         style={{ paddingBottom: bottomBarHeight + keyboardHeight }}
       >
         {!loaded ? (
@@ -2532,21 +2591,33 @@ export function EinkaufenScreen() {
           </DndContext>
         )}
 
+        {/* Spacer pushes checked section to bottom of visible scroll area */}
+        <div className="flex-1" />
         {/* Checked items — inside scroll area so they scroll with the list */}
-        <CheckedSection
-          items={checkedItems}
-          onToggle={handleToggle}
-          onClearAll={handleClearChecked}
-        />
+        <div ref={checkedSectionRef}>
+          <CheckedSection
+            items={checkedItems}
+            onToggle={handleToggle}
+            onClearAll={handleClearChecked}
+          />
+        </div>
       </div>
 
-      {/* Add item bar — absolute positioned at bottom, shifts up with keyboard */}
+      {/* Add item bar — fixed when keyboard open, absolute otherwise */}
       <div
         ref={bottomBarRef}
-        className="absolute left-0 right-0 bottom-0 z-10 bg-white"
-        style={{
-          transform: keyboardHeight > 0 ? `translateY(-${keyboardHeight}px)` : undefined,
-          willChange: keyboardHeight > 0 ? "transform" : undefined,
+        className="z-10 bg-white"
+        style={keyboardHeight > 0 ? {
+          position: "fixed",
+          left: 0,
+          right: 0,
+          bottom: keyboardHeight,
+          willChange: "bottom",
+        } : {
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
         }}
       >
         <AddItemBar

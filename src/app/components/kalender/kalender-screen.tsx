@@ -1766,6 +1766,9 @@ function EventEditorSheet({
           <div className="px-4 py-3 border-b border-gray-100">
             <input
               type="text"
+              autoComplete="off"
+              data-lpignore="true"
+              data-form-type="other"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Titel hinzufügen"
@@ -1905,6 +1908,9 @@ function EventEditorSheet({
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Notiz hinzufügen..."
                   rows={3}
+                  autoComplete="off"
+                  data-lpignore="true"
+                  data-form-type="other"
                   className="flex-1 text-sm text-gray-900 placeholder:text-gray-400 outline-none bg-transparent resize-none"
                   autoFocus
                 />
