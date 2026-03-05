@@ -5,11 +5,31 @@
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>App creation instructions</title>
+      <!-- PWA Manifest -->
+<link rel="manifest" href="/manifest.json">
+
+<!-- Theme Color -->
+<meta name="theme-color" content="#F97316">
+
+<!-- iOS PWA Support -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Zuhause">
+<link rel="apple-touch-icon" href="/icon-192.png">
     </head>
 
     <body>
       <div id="root"></div>
       <script type="module" src="/src/main.tsx"></script>
+    <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then((reg) => console.log('[SW] Registriert:', reg.scope))
+        .catch((err) => console.warn('[SW] Registrierung fehlgeschlagen:', err));
+    });
+  }
+</script>
     </body>
   </html>
   
