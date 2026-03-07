@@ -6,6 +6,7 @@ import { EinkaufenScreen } from "./einkaufen/einkaufen-screen";
 import { KalenderScreen } from "./kalender/kalender-screen";
 import { MehrScreen } from "./mehr-screen";
 import { ListenScreen } from "./listen/listen-screen";
+import { KochenScreen } from "./kochen/kochen-screen";
 
 type TabId = "kalender" | "einkaufen" | "listen" | "kochen" | "mehr";
 
@@ -111,7 +112,7 @@ export function MainShell() {
           <ListenScreen />
         </div>
         <div className={`absolute inset-0 flex flex-col ${activeTab === "kochen" ? "" : "hidden"}`}>
-          <PlaceholderScreen title="Kochen" />
+          <KochenScreen />
         </div>
         <div className={`absolute inset-0 flex flex-col ${activeTab === "mehr" ? "" : "hidden"}`}>
           <MehrScreen onSignOut={signOut} />

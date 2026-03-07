@@ -1140,6 +1140,11 @@ function CategorySortModal({
   const inputRef = useRef<HTMLInputElement>(null);
   const isFirstRender = useRef(true);
 
+  // Auto-focus the search field when drawer opens
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 100);
+  }, []);
+
   // Auto-save on every change (skip initial render)
   useEffect(() => {
     if (isFirstRender.current) {

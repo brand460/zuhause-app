@@ -376,6 +376,168 @@ app.put("/make-server-2a26506b/custom-blocks", async (c) => {
   }
 });
 
+// ── Recipes endpoints ──────────────────────────────────────────────
+
+// GET all recipes for a household
+app.get("/make-server-2a26506b/recipes", async (c) => {
+  try {
+    const householdId = c.req.query("household_id");
+    if (!householdId) {
+      return c.json({ error: "household_id ist erforderlich." }, 400);
+    }
+    const key = `recipes:${householdId}`;
+    const recipes = await withRetry(() => kv.get(key));
+    return c.json({ recipes: recipes || [] });
+  } catch (err) {
+    console.log("GET /recipes error:", err);
+    return c.json({ error: `Fehler beim Laden der Rezepte: ${err}` }, 500);
+  }
+});
+
+// PUT — save all recipes
+app.put("/make-server-2a26506b/recipes", async (c) => {
+  try {
+    const { household_id, recipes } = await c.req.json();
+    if (!household_id) {
+      return c.json({ error: "household_id ist erforderlich." }, 400);
+    }
+    const key = `recipes:${household_id}`;
+    await withRetry(() => kv.set(key, recipes || []));
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("PUT /recipes error:", err);
+    return c.json({ error: `Fehler beim Speichern der Rezepte: ${err}` }, 500);
+  }
+});
+
+// ── Meal plan endpoints ────────────────────────────────────────────
+
+// GET all meal plan entries for a household
+app.get("/make-server-2a26506b/meal-plan", async (c) => {
+  try {
+    const householdId = c.req.query("household_id");
+    if (!householdId) {
+      return c.json({ error: "household_id ist erforderlich." }, 400);
+    }
+    const key = `meal_plan:${householdId}`;
+    const entries = await withRetry(() => kv.get(key));
+    return c.json({ entries: entries || [] });
+  } catch (err) {
+    console.log("GET /meal-plan error:", err);
+    return c.json({ error: `Fehler beim Laden des Wochenplans: ${err}` }, 500);
+  }
+});
+
+// PUT — save all meal plan entries
+app.put("/make-server-2a26506b/meal-plan", async (c) => {
+  try {
+    const { household_id, entries } = await c.req.json();
+    if (!household_id) {
+      return c.json({ error: "household_id ist erforderlich." }, 400);
+    }
+    const key = `meal_plan:${household_id}`;
+    await withRetry(() => kv.set(key, entries || []));
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("PUT /meal-plan error:", err);
+    return c.json({ error: `Fehler beim Speichern des Wochenplans: ${err}` }, 500);
+  }
+});
+
+// ── Recipe URL import via Claude API ───────────────────────────────
+
+app.post("/make-server-2a26506b/import-recipe", async (c) => {
+  try {
+    const { url, anthropic_api_key } = await c.req.json();
+    if (!url) {
+      return c.json({ error: "URL ist erforderlich." }, 400);
+    }
+
+    const apiKey = anthropic_api_key;
+    if (!apiKey) {
+      return c.json({ error: "ANTHROPIC_API_KEY wurde nicht übergeben. Bitte in Vercel unter Environment Variables als VITE_ANTHROPIC_API_KEY hinterlegen." }, 400);
+    }
+
+    // Fetch the webpage content
+    let pageContent: string;
+    try {
+      const pageRes = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; RecipeBot/1.0)" },
+      });
+      pageContent = await pageRes.text();
+      // Strip HTML tags and limit length to ~15000 chars for Claude
+      pageContent = pageContent
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .substring(0, 15000);
+    } catch (fetchErr) {
+      return c.json({ error: `Fehler beim Laden der URL: ${fetchErr}` }, 400);
+    }
+
+    // Call Claude API
+    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2048,
+        system: `Du bist ein Rezept-Extraktor. Extrahiere aus dem folgenden Web-Inhalt ein Rezept als JSON:
+{
+  "title": "",
+  "description": "",
+  "prep_time_minutes": null,
+  "cook_time_minutes": null,
+  "servings": null,
+  "ingredients": [{"name": "", "quantity": "", "unit": ""}],
+  "steps": [{"position": 1, "description": ""}],
+  "image_url": null,
+  "categories": [],
+  "source_url": ""
+}
+Felder die du nicht finden kannst setzt du auf null. Antworte NUR mit dem JSON.`,
+        messages: [
+          { role: "user", content: `URL: ${url}\n\nInhalt:\n${pageContent}` },
+        ],
+      }),
+    });
+
+    if (!claudeRes.ok) {
+      const errText = await claudeRes.text();
+      console.log("Claude API error:", errText);
+      return c.json({ error: `Claude API Fehler: ${claudeRes.status} ${errText.substring(0, 200)}` }, 500);
+    }
+
+    const claudeData = await claudeRes.json();
+    const text = claudeData?.content?.[0]?.text || "";
+
+    // Extract JSON from response
+    let recipe: any;
+    try {
+      // Try to find JSON block in the response
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      recipe = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
+    } catch (parseErr) {
+      console.log("Claude response parse error:", parseErr, "Text:", text.substring(0, 500));
+      return c.json({ error: `Fehler beim Parsen der Claude-Antwort: ${parseErr}` }, 500);
+    }
+
+    // Ensure source_url is set
+    recipe.source_url = recipe.source_url || url;
+
+    return c.json({ recipe });
+  } catch (err) {
+    console.log("POST /import-recipe error:", err);
+    return c.json({ error: `Fehler beim Importieren des Rezepts: ${err}` }, 500);
+  }
+});
+
 // Global error handler — ensures CORS headers are always returned even on crashes
 app.onError((err, c) => {
   console.log("Unhandled server error:", err);

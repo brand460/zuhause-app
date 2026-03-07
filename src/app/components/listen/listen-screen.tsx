@@ -15,6 +15,8 @@ import {
   MoreHorizontal,
   FolderPlus,
   Trash2,
+  IndentIncrease,
+  IndentDecrease,
 } from "lucide-react";
 import { apiFetch } from "../supabase-client";
 import {
@@ -1052,6 +1054,7 @@ function PageTreeItem(props: PageTreeItemProps) {
   const isDragging = page.id === dragActiveId;
   const renameRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressMovedRef = useRef(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
   // Register/unregister row ref for drop zone detection
@@ -1077,9 +1080,22 @@ function PageTreeItem(props: PageTreeItemProps) {
   const handleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+    longPressMovedRef.current = false;
     longPressTimerRef.current = setTimeout(() => {
-      onContextMenu(page.id, clientX, clientY);
+      // Only open popover if no movement was detected (i.e. not a drag)
+      if (!longPressMovedRef.current) {
+        onContextMenu(page.id, clientX, clientY);
+      }
     }, 500);
+  };
+
+  const handleLongPressMove = () => {
+    // Movement detected → this is a drag, not a popover trigger
+    longPressMovedRef.current = true;
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
   };
 
   const handleLongPressEnd = () => {
@@ -1121,6 +1137,7 @@ function PageTreeItem(props: PageTreeItemProps) {
           onContextMenu(page.id, e.clientX, e.clientY);
         }}
         onTouchStart={handleLongPressStart}
+        onTouchMove={handleLongPressMove}
         onTouchEnd={handleLongPressEnd}
         onTouchCancel={handleLongPressEnd}
       >
@@ -1280,6 +1297,43 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   const dragSrcRef = useRef<HTMLElement | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
 
+  // Mobile indent toolbar state
+  const [cursorInLi, setCursorInLi] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Track visualViewport for keyboard height
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const kbH = window.innerHeight - vv.height - vv.offsetTop;
+      setKeyboardHeight(Math.max(0, kbH));
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+
+  // Track whether cursor is inside an <li>
+  useEffect(() => {
+    const checkCursorInLi = () => {
+      const sel = window.getSelection();
+      if (!sel?.rangeCount || !editorRef.current) { setCursorInLi(false); return; }
+      let node: Node | null = sel.getRangeAt(0).startContainer;
+      while (node && node !== editorRef.current) {
+        if (node instanceof HTMLElement && node.tagName === "LI") { setCursorInLi(true); return; }
+        node = node.parentNode;
+      }
+      setCursorInLi(false);
+    };
+    document.addEventListener("selectionchange", checkCursorInLi);
+    return () => document.removeEventListener("selectionchange", checkCursorInLi);
+  }, []);
+
   // Slash-command state
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
@@ -1363,6 +1417,49 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     sel?.removeAllRanges();
     sel?.addRange(r);
   }, []);
+
+  // ── Indent/Outdent helpers for the mobile toolbar ──
+  const handleMobileIndent = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount || !editorRef.current) return;
+    const li = findClosestTag(sel.getRangeAt(0).startContainer, "LI");
+    if (!li) return;
+    const parentList = li.parentElement;
+    if (!parentList || (parentList.tagName !== "UL" && parentList.tagName !== "OL")) return;
+    const prevLi = li.previousElementSibling;
+    if (!prevLi || prevLi.tagName !== "LI") return;
+    const listTag = parentList.tagName.toLowerCase();
+    let subList = prevLi.querySelector(`:scope > ${listTag}`) as HTMLElement | null;
+    if (!subList) { subList = document.createElement(listTag); prevLi.appendChild(subList); }
+    subList.appendChild(li);
+    placeCursorAtStart(li);
+    syncContent();
+  }, [findClosestTag, placeCursorAtStart, syncContent]);
+
+  const handleMobileOutdent = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel?.rangeCount || !editorRef.current) return;
+    const li = findClosestTag(sel.getRangeAt(0).startContainer, "LI");
+    if (!li) return;
+    const parentList = li.parentElement;
+    if (!parentList) return;
+    const grandparentLi = parentList.parentElement;
+    if (!grandparentLi || grandparentLi.tagName !== "LI") return;
+    const outerList = grandparentLi.parentElement;
+    if (!outerList) return;
+    const siblingsAfter: Element[] = [];
+    let next = li.nextElementSibling;
+    while (next) { siblingsAfter.push(next); next = next.nextElementSibling; }
+    outerList.insertBefore(li, grandparentLi.nextSibling);
+    if (siblingsAfter.length > 0) {
+      const subList = document.createElement(parentList.tagName.toLowerCase());
+      siblingsAfter.forEach((s) => subList.appendChild(s));
+      li.appendChild(subList);
+    }
+    if (parentList.children.length === 0) parentList.remove();
+    placeCursorAtStart(li);
+    syncContent();
+  }, [findClosestTag, placeCursorAtStart, syncContent]);
 
   // ── Slash-command: filtered items ──
   const slashFiltered = useMemo(() => {
@@ -1560,7 +1657,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     x: number;
     y: number;
   } | null>(null);
-  const tableLpRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tableDoubleTapRef = useRef<{ type: string; tableEl: HTMLTableElement; index: number; time: number } | null>(null);
 
   const scanTables = useCallback(() => {
     if (!editorRef.current) { setTableInfos([]); return; }
@@ -1606,13 +1703,17 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     return () => { mo.disconnect(); sp?.removeEventListener("scroll", scan); window.removeEventListener("resize", scan); };
   }, [scanTables]);
 
-  const handleTableLpStart = useCallback(
+  const handleTableDoubleTap = useCallback(
     (e: React.TouchEvent | React.MouseEvent, type: "col" | "row", tableEl: HTMLTableElement, index: number) => {
       e.preventDefault();
       e.stopPropagation();
       const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
       const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
-      tableLpRef.current = setTimeout(() => {
+      const now = Date.now();
+      const prev = tableDoubleTapRef.current;
+      if (prev && prev.type === type && prev.tableEl === tableEl && prev.index === index && now - prev.time < 300) {
+        // Double tap detected — open popover
+        tableDoubleTapRef.current = null;
         const PW = 220, PH = type === "col" ? 210 : 170, M = 16;
         let px = cx, py = cy;
         if (px + PW > window.innerWidth - M) px = window.innerWidth - M - PW;
@@ -1620,14 +1721,13 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
         if (py + PH > window.innerHeight - M) py = cy - PH;
         if (py < M) py = M;
         setTablePopover({ type, tableEl, index, x: px, y: py });
-      }, 500);
+      } else {
+        // First tap — record it
+        tableDoubleTapRef.current = { type, tableEl, index, time: now };
+      }
     },
     []
   );
-
-  const handleTableLpEnd = useCallback(() => {
-    if (tableLpRef.current) { clearTimeout(tableLpRef.current); tableLpRef.current = null; }
-  }, []);
 
   const insertColRight = useCallback((table: HTMLTableElement, colIdx: number) => {
     for (let r = 0; r < table.rows.length; r++) {
@@ -1725,8 +1825,66 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
       closeSlashMenu();
     }
 
+    // ── Mobile fallback: detect "- " via input event for bullet list ──
+    if (sel?.isCollapsed && sel.rangeCount) {
+      const range = sel.getRangeAt(0);
+      const blockEl = getBlockElement(range.startContainer);
+      if (blockEl && (blockEl.tagName === "P" || blockEl.tagName === "DIV") && !blockEl.classList.contains("editor-todo")) {
+        const text = blockEl.textContent || "";
+        if (text === "- " || text === "\u2013 " || text === "\u2014 ") {
+          const li = document.createElement("li");
+          li.innerHTML = "<br>";
+          const ul = document.createElement("ul");
+          ul.appendChild(li);
+          blockEl.replaceWith(ul);
+          placeCursorAtStart(li);
+          syncContent();
+          return;
+        }
+        // "1. " → numbered list
+        if (/^\d+\.\s$/.test(text)) {
+          const li = document.createElement("li");
+          li.innerHTML = "<br>";
+          const ol = document.createElement("ol");
+          ol.appendChild(li);
+          blockEl.replaceWith(ol);
+          placeCursorAtStart(li);
+          syncContent();
+          return;
+        }
+        // "[] " → to-do
+        if (text === "[] ") {
+          const todoDiv = document.createElement("div");
+          todoDiv.className = "editor-todo";
+          todoDiv.setAttribute("data-checked", "false");
+          const checkbox = document.createElement("span");
+          checkbox.contentEditable = "false";
+          checkbox.className = "editor-todo-check";
+          todoDiv.appendChild(checkbox);
+          const textSpan = document.createElement("span");
+          textSpan.className = "editor-todo-text";
+          textSpan.innerHTML = "<br>";
+          todoDiv.appendChild(textSpan);
+          blockEl.replaceWith(todoDiv);
+          placeCursorAtStart(textSpan);
+          syncContent();
+          return;
+        }
+        // "# " → H1, "## " → H2, "### " → H3
+        if (text === "# ") {
+          const h = document.createElement("h1"); h.innerHTML = "<br>"; blockEl.replaceWith(h); placeCursorAtStart(h); syncContent(); return;
+        }
+        if (text === "## ") {
+          const h = document.createElement("h2"); h.innerHTML = "<br>"; blockEl.replaceWith(h); placeCursorAtStart(h); syncContent(); return;
+        }
+        if (text === "### ") {
+          const h = document.createElement("h3"); h.innerHTML = "<br>"; blockEl.replaceWith(h); placeCursorAtStart(h); syncContent(); return;
+        }
+      }
+    }
+
     syncContent();
-  }, [syncContent, ensureNotEmpty, getBlockElement, slashOpen, openSlashMenu, closeSlashMenu]);
+  }, [syncContent, ensureNotEmpty, getBlockElement, placeCursorAtStart, slashOpen, openSlashMenu, closeSlashMenu]);
 
   // ── Handle keydown ──
   const handleKeyDown = useCallback(
@@ -2618,12 +2776,8 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
                   key={`col-${ci}`}
                   className="absolute bg-gray-100 border-b border-gray-200 z-10 cursor-default"
                   style={{ top: info.top - 8, left: col.left, width: col.width, height: 8, userSelect: "none" }}
-                  onTouchStart={(e) => handleTableLpStart(e, "col", info.tableEl, ci)}
-                  onTouchEnd={handleTableLpEnd}
-                  onTouchCancel={handleTableLpEnd}
-                  onMouseDown={(e) => handleTableLpStart(e, "col", info.tableEl, ci)}
-                  onMouseUp={handleTableLpEnd}
-                  onMouseLeave={handleTableLpEnd}
+                  onTouchStart={(e) => handleTableDoubleTap(e, "col", info.tableEl, ci)}
+                  onMouseDown={(e) => handleTableDoubleTap(e, "col", info.tableEl, ci)}
                 />
               ))}
               {/* Row handles */}
@@ -2632,12 +2786,8 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
                   key={`row-${ri}`}
                   className="absolute bg-gray-100 border-r border-gray-200 z-10 cursor-default"
                   style={{ top: row.top, left: info.left - 8, width: 8, height: row.height, userSelect: "none" }}
-                  onTouchStart={(e) => handleTableLpStart(e, "row", info.tableEl, ri)}
-                  onTouchEnd={handleTableLpEnd}
-                  onTouchCancel={handleTableLpEnd}
-                  onMouseDown={(e) => handleTableLpStart(e, "row", info.tableEl, ri)}
-                  onMouseUp={handleTableLpEnd}
-                  onMouseLeave={handleTableLpEnd}
+                  onTouchStart={(e) => handleTableDoubleTap(e, "row", info.tableEl, ri)}
+                  onMouseDown={(e) => handleTableDoubleTap(e, "row", info.tableEl, ri)}
                 />
               ))}
             </div>
@@ -2705,6 +2855,29 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           )}
         </div>
       </div>
+
+      {/* Mobile indent/outdent toolbar above keyboard */}
+      {cursorInLi && keyboardHeight > 0 && (
+        <div
+          className="fixed left-0 right-0 z-50 flex items-center justify-center gap-1 bg-gray-100 border-t border-gray-200 px-3 py-1.5"
+          style={{ bottom: keyboardHeight }}
+        >
+          <button
+            onPointerDown={(e) => { e.preventDefault(); handleMobileOutdent(); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-sm text-gray-700 active:bg-orange-50 active:border-orange-300 transition shadow-sm"
+          >
+            <IndentDecrease className="w-4 h-4" />
+            <span className="text-xs">{"\u2190"} Ausr{"\u00fc"}cken</span>
+          </button>
+          <button
+            onPointerDown={(e) => { e.preventDefault(); handleMobileIndent(); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-sm text-gray-700 active:bg-orange-50 active:border-orange-300 transition shadow-sm"
+          >
+            <IndentIncrease className="w-4 h-4" />
+            <span className="text-xs">Einr{"\u00fc"}cken {"\u2192"}</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }
