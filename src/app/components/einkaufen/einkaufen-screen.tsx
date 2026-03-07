@@ -793,6 +793,8 @@ function QuantityDrawer({
             inputMode="decimal"
             autoComplete="off"
             autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -875,7 +877,9 @@ function SortableShoppingItem({
   useEffect(() => {
     if (isEditingName && nameInputRef.current) {
       nameInputRef.current.focus();
-      nameInputRef.current.setSelectionRange(0, nameInputRef.current.value.length);
+      // Place cursor at end — do NOT select all text (prevents word-selection on mobile tap)
+      const len = nameInputRef.current.value.length;
+      nameInputRef.current.setSelectionRange(len, len);
     }
   }, [isEditingName]);
 
@@ -984,6 +988,8 @@ function SortableShoppingItem({
               inputMode="text"
               autoComplete="off"
               autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1227,6 +1233,7 @@ function CategorySortModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+      style={{ touchAction: "none" }}
       onClick={onClose}
     >
       <motion.div
@@ -1249,7 +1256,7 @@ function CategorySortModal({
             Ziehe Kategorien um die Sortierung zu ändern
           </p>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 pb-2 min-h-0">
+        <div className="flex-1 overflow-y-auto px-5 pb-2 min-h-0" style={{ overscrollBehavior: "contain", touchAction: "pan-y" }}>
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -1361,6 +1368,8 @@ function CategorySortModal({
                 type="search"
                 autoComplete="off"
                 autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
                 data-lpignore="true"
                 data-1p-ignore="true"
                 data-form-type="other"
@@ -1726,6 +1735,12 @@ function CategoryPickerModal({
 }) {
   const [filterQuery, setFilterQuery] = useState("");
   const [bottomOffset, setBottomOffset] = useState(0);
+  const filterInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus the search field when drawer opens
+  useEffect(() => {
+    setTimeout(() => filterInputRef.current?.focus(), 100);
+  }, []);
 
   // Track visual viewport to position above keyboard
   useEffect(() => {
@@ -1789,10 +1804,13 @@ function CategoryPickerModal({
           <div className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2 border border-gray-100">
             <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
             <input
+              ref={filterInputRef}
               type="text"
               inputMode="text"
               autoComplete="off"
               autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1813,7 +1831,7 @@ function CategoryPickerModal({
             )}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 pb-5 min-h-0">
+        <div className="flex-1 overflow-y-auto px-5 pb-5 min-h-0" style={{ overscrollBehavior: "contain", touchAction: "pan-y" }}>
           <div className="flex flex-wrap gap-2">
             {filtered.map((cat) => (
               <CategoryChip
@@ -3080,8 +3098,8 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
           </DndContext>
         )}
 
-        {/* Spacer pushes checked section to bottom of visible scroll area */}
-        <div className="flex-1" />
+        {/* Spacer pushes checked section to bottom of visible scroll area (only when keyboard is closed) */}
+        {keyboardHeight === 0 && <div className="flex-1" />}
         {/* Checked items — inside scroll area so they scroll with the list */}
         <div ref={checkedSectionRef}>
           <CheckedSection

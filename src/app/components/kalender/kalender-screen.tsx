@@ -1793,6 +1793,9 @@ function EventEditorSheet({
             <input
               type="text"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1936,6 +1939,9 @@ function EventEditorSheet({
                   placeholder="Notiz hinzufügen..."
                   rows={3}
                   autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"

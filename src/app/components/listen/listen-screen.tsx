@@ -8,6 +8,8 @@ import React, {
 import {
   Menu,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   Plus,
   Search,
   X,
@@ -17,6 +19,8 @@ import {
   Trash2,
   IndentIncrease,
   IndentDecrease,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { apiFetch } from "../supabase-client";
 import {
@@ -603,58 +607,145 @@ export function ListenScreen() {
       )}
 
       {/* Context menu popover — rendered at top level to avoid stacking context issues */}
-      {contextMenu && (
-        <>
-          <div className="fixed inset-0 z-[60]" onClick={() => setContextMenu(null)} />
-          <div
-            ref={(el) => {
-              if (!el) return;
-              const rect = el.getBoundingClientRect();
-              const vw = window.innerWidth;
-              const vh = window.innerHeight;
-              const margin = 8;
-              // Position near the trigger button (contextMenu.x, contextMenu.y)
-              let newLeft = contextMenu.x + 4;
-              let newTop = contextMenu.y;
-              // If not enough space to the right, show to the left
-              if (newLeft + rect.width > vw - margin) {
-                newLeft = contextMenu.x - rect.width - 4;
-              }
-              if (newLeft < margin) newLeft = margin;
-              if (rect.bottom > vh - margin) newTop = contextMenu.y - rect.height;
-              if (newTop < margin) newTop = margin;
-              el.style.left = `${newLeft}px`;
-              el.style.top = `${newTop}px`;
-            }}
-            className="fixed z-[70] bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 min-w-[192px]"
-            style={{ left: contextMenu.x + 4, top: contextMenu.y }}
-          >
-            <button
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                createPage(contextMenu.pageId);
-                setContextMenu(null);
+      {contextMenu && (() => {
+        const isTouchDevice = 'ontouchstart' in window;
+        const cmPage = pages.find((p) => p.id === contextMenu.pageId);
+        const cmSiblings = cmPage
+          ? pages.filter((p) => p.parent_id === cmPage.parent_id).sort((a, b) => a.position - b.position)
+          : [];
+        const cmIdx = cmSiblings.findIndex((p) => p.id === contextMenu.pageId);
+        const canMoveUp = cmIdx > 0;
+        const canMoveDown = cmIdx >= 0 && cmIdx < cmSiblings.length - 1;
+        // Can indent if there's a sibling above (becomes child of sibling above)
+        const canIndent = cmIdx > 0;
+        // Can outdent if the page has a parent
+        const canOutdent = cmPage ? cmPage.parent_id !== null : false;
+
+        return (
+          <>
+            <div className="fixed inset-0 z-[60]" onClick={() => setContextMenu(null)} />
+            <div
+              ref={(el) => {
+                if (!el) return;
+                const rect = el.getBoundingClientRect();
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                const margin = 8;
+                let newLeft = contextMenu.x + 4;
+                let newTop = contextMenu.y;
+                if (newLeft + rect.width > vw - margin) {
+                  newLeft = contextMenu.x - rect.width - 4;
+                }
+                if (newLeft < margin) newLeft = margin;
+                if (rect.bottom > vh - margin) newTop = contextMenu.y - rect.height;
+                if (newTop < margin) newTop = margin;
+                el.style.left = `${newLeft}px`;
+                el.style.top = `${newTop}px`;
               }}
-              className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-50 cursor-pointer w-full text-sm text-gray-700 transition whitespace-nowrap"
+              className="fixed z-[70] bg-white rounded-xl shadow-lg border border-gray-100 p-1.5 min-w-[192px]"
+              style={{ left: contextMenu.x + 4, top: contextMenu.y }}
             >
-              <FolderPlus className="w-4 h-4 text-gray-400" /> Unterseite erstellen
-            </button>
-            <div className="border-t border-gray-100 my-1" />
-            <button
-              onPointerDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setDeleteConfirmPageId(contextMenu.pageId);
-                setContextMenu(null);
-              }}
-              className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-red-50 cursor-pointer w-full text-sm text-red-500 transition whitespace-nowrap"
-            >
-              <Trash2 className="w-4 h-4" /> L{"\u00f6"}schen
-            </button>
-          </div>
-        </>
-      )}
+              <button
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  createPage(contextMenu.pageId);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-50 cursor-pointer w-full text-sm text-gray-700 transition whitespace-nowrap"
+              >
+                <FolderPlus className="w-4 h-4 text-gray-400" /> Unterseite erstellen
+              </button>
+
+              {/* Mobile-only move options */}
+              {isTouchDevice && (
+                <>
+                  <div className="border-t border-gray-100 my-1" />
+                  <button
+                    disabled={!canMoveUp}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (canMoveUp && cmPage) {
+                        movePage(contextMenu.pageId, cmPage.parent_id, cmIdx - 1);
+                        setContextMenu(null);
+                      }
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-50 cursor-pointer w-full text-sm text-gray-700 transition whitespace-nowrap disabled:opacity-30 disabled:cursor-default"
+                  >
+                    <ArrowUp className="w-4 h-4 text-gray-400" /> Nach oben
+                  </button>
+                  <button
+                    disabled={!canMoveDown}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (canMoveDown && cmPage) {
+                        movePage(contextMenu.pageId, cmPage.parent_id, cmIdx + 1);
+                        setContextMenu(null);
+                      }
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-50 cursor-pointer w-full text-sm text-gray-700 transition whitespace-nowrap disabled:opacity-30 disabled:cursor-default"
+                  >
+                    <ArrowDown className="w-4 h-4 text-gray-400" /> Nach unten
+                  </button>
+                  <button
+                    disabled={!canIndent}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (canIndent && cmPage) {
+                        const siblingAbove = cmSiblings[cmIdx - 1];
+                        // Make child of sibling above, at the end
+                        const siblingChildren = pages.filter((p) => p.parent_id === siblingAbove.id);
+                        movePage(contextMenu.pageId, siblingAbove.id, siblingChildren.length);
+                        setExpandedPages((prev) => new Set(prev).add(siblingAbove.id));
+                        setContextMenu(null);
+                      }
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-50 cursor-pointer w-full text-sm text-gray-700 transition whitespace-nowrap disabled:opacity-30 disabled:cursor-default"
+                  >
+                    <IndentIncrease className="w-4 h-4 text-gray-400" /> Einr{"\u00fc"}cken
+                  </button>
+                  <button
+                    disabled={!canOutdent}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (canOutdent && cmPage && cmPage.parent_id) {
+                        const parent = pages.find((p) => p.id === cmPage.parent_id);
+                        const grandparentId = parent ? parent.parent_id : null;
+                        const gpSiblings = pages
+                          .filter((p) => p.parent_id === grandparentId)
+                          .sort((a, b) => a.position - b.position);
+                        const parentIdx = gpSiblings.findIndex((p) => p.id === cmPage.parent_id);
+                        movePage(contextMenu.pageId, grandparentId, parentIdx + 1);
+                        setContextMenu(null);
+                      }
+                    }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-gray-50 cursor-pointer w-full text-sm text-gray-700 transition whitespace-nowrap disabled:opacity-30 disabled:cursor-default"
+                  >
+                    <IndentDecrease className="w-4 h-4 text-gray-400" /> Ausr{"\u00fc"}cken
+                  </button>
+                </>
+              )}
+
+              <div className="border-t border-gray-100 my-1" />
+              <button
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDeleteConfirmPageId(contextMenu.pageId);
+                  setContextMenu(null);
+                }}
+                className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-red-50 cursor-pointer w-full text-sm text-red-500 transition whitespace-nowrap"
+              >
+                <Trash2 className="w-4 h-4" /> L{"\u00f6"}schen
+              </button>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Delete confirmation dialog */}
       {deleteConfirmPageId && (() => {
@@ -901,6 +992,9 @@ function SidebarContent(props: SidebarContentProps) {
             onChange={(e) => onSetSearchQuery(e.target.value)}
             className="w-full pl-8 pr-8 py-1.5 text-sm bg-gray-100 rounded-lg border-0 outline-none focus:ring-2 focus:ring-orange-300 placeholder:text-gray-400"
             autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1188,6 +1282,9 @@ function PageTreeItem(props: PageTreeItemProps) {
             }}
             onClick={(e) => e.stopPropagation()}
             autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -2669,6 +2766,9 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           placeholder="Unbenannt"
           rows={1}
           autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           data-lpignore="true"
           data-1p-ignore="true"
           data-form-type="other"
@@ -2714,6 +2814,12 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-form-type="other"
             className="editor-content outline-none min-h-[200px]"
             onInput={handleInput}
             onKeyDown={handleKeyDown}

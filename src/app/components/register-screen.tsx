@@ -53,6 +53,9 @@ export function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps) {
             <input
               type="text"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -71,6 +74,9 @@ export function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps) {
             <input
               type="email"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -89,6 +95,9 @@ export function RegisterScreen({ onSwitchToLogin }: RegisterScreenProps) {
             <input
               type="password"
               autoComplete="new-password"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"

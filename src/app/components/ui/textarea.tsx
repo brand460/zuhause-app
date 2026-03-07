@@ -7,6 +7,9 @@ function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
     <textarea
       data-slot="textarea"
       autoComplete="off"
+      autoCorrect="off"
+      autoCapitalize="off"
+      spellCheck={false}
       data-lpignore="true"
       data-1p-ignore="true"
       data-form-type="other"

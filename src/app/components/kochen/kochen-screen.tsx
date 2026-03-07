@@ -616,7 +616,14 @@ export function KochenScreen() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
-              type="text"
+              type="search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
               placeholder="Rezepte oder Zutaten suchen..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -823,7 +830,14 @@ export function KochenScreen() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
-                  type="text"
+                  type="search"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-lpignore="true"
+                  data-1p-ignore="true"
+                  data-form-type="other"
                   placeholder="Rezept suchen..."
                   value={mealPickerSearch}
                   onChange={(e) => setMealPickerSearch(e.target.value)}
@@ -874,6 +888,13 @@ export function KochenScreen() {
             <h3 className="text-base font-semibold mb-3">Freitext-Eintrag</h3>
             <input
               type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
               placeholder='z.B. "Restaurant", "Reste"...'
               value={freetextValue}
               onChange={(e) => setFreetextValue(e.target.value)}
@@ -953,6 +974,13 @@ export function KochenScreen() {
             <h3 className="text-base font-semibold mb-3">URL importieren</h3>
             <input
               type="url"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
               placeholder="https://..."
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}
@@ -1177,6 +1205,13 @@ function RecipeDetailView({
             value={comment}
             onChange={(e) => handleCommentChange(e.target.value)}
             placeholder="Eigene Notizen..."
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-form-type="other"
             className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm border-0 outline-none focus:ring-2 focus:ring-orange-200 resize-none"
             rows={3}
           />
@@ -1297,6 +1332,13 @@ function RecipeEditView({
             value={recipe.title}
             onChange={(e) => update({ title: e.target.value })}
             placeholder="Rezeptname"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-form-type="other"
             className={`w-full px-3 py-2 bg-gray-50 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-200 ${
               isNull(recipe.title) ? "border-2 border-orange-300" : "border-0"
             }`}
@@ -1311,6 +1353,13 @@ function RecipeEditView({
             value={recipe.description || ""}
             onChange={(e) => update({ description: e.target.value })}
             placeholder="Kurze Beschreibung..."
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-form-type="other"
             className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm border-0 outline-none focus:ring-2 focus:ring-orange-200 resize-none"
             rows={2}
           />
@@ -1323,6 +1372,13 @@ function RecipeEditView({
             value={recipe.image_url || ""}
             onChange={(e) => update({ image_url: e.target.value || null })}
             placeholder="https://..."
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-form-type="other"
             className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm border-0 outline-none focus:ring-2 focus:ring-orange-200"
           />
         </div>
@@ -1334,6 +1390,13 @@ function RecipeEditView({
             value={recipe.source_url || ""}
             onChange={(e) => update({ source_url: e.target.value })}
             placeholder="https://..."
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-form-type="other"
             className="w-full px-3 py-2 bg-gray-50 rounded-xl text-sm border-0 outline-none focus:ring-2 focus:ring-orange-200"
           />
         </div>
@@ -1343,7 +1406,14 @@ function RecipeEditView({
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Vorbereit. (Min)</label>
             <input
-              type="number"
+              type="tel"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
               value={recipe.prep_time_minutes ?? ""}
               onChange={(e) => update({ prep_time_minutes: e.target.value ? parseInt(e.target.value) : null })}
               className={`w-full px-3 py-2 bg-gray-50 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-200 ${
@@ -1354,7 +1424,14 @@ function RecipeEditView({
           <div>
             <label className="text-xs text-gray-500 mb-1 block">Kochzeit (Min)</label>
             <input
-              type="number"
+              type="tel"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
               value={recipe.cook_time_minutes ?? ""}
               onChange={(e) => update({ cook_time_minutes: e.target.value ? parseInt(e.target.value) : null })}
               className={`w-full px-3 py-2 bg-gray-50 rounded-xl text-sm outline-none focus:ring-2 focus:ring-orange-200 ${

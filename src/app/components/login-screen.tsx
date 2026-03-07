@@ -52,6 +52,9 @@ export function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
             <input
               type="email"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -70,6 +73,9 @@ export function LoginScreen({ onSwitchToRegister }: LoginScreenProps) {
             <input
               type="password"
               autoComplete="new-password"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"

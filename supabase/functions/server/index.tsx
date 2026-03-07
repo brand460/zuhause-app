@@ -51,7 +51,7 @@ const supabaseAdmin = () =>
 
 // Health check
 app.get("/make-server-2a26506b/health", (c) => {
-  return c.json({ status: "ok", ts: Date.now() });
+  return c.json({ status: "ok", ts: Date.now(), v: 2 });
 });
 
 // Sign up — uses admin API to create user with email_confirm: true

@@ -12,6 +12,7 @@
 input, textarea, [contenteditable] {
   -webkit-user-select: text;
   user-select: text;
+  caret-color: #F97316;
 }
 
 /* PWA: Pull-to-Refresh deaktivieren & App-Shell fixieren */
