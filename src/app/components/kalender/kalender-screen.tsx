@@ -17,6 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import { apiFetch } from "../supabase-client";
+import { useKvRealtime, markLocalWrite } from "../use-kv-realtime";
 import {
   CalendarEvent,
   CalendarLabel,
@@ -484,6 +485,7 @@ export function KalenderScreen() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
+        markLocalWrite();
         await apiFetch("/calendar-events", {
           method: "PUT",
           body: JSON.stringify({ household_id: DEV_HOUSEHOLD_ID, events: newEvents }),
@@ -518,6 +520,11 @@ export function KalenderScreen() {
     }
   }, []);
 
+  const reloadAll = useCallback(() => {
+    loadEvents();
+    loadLabels();
+  }, [loadEvents, loadLabels]);
+
   useEffect(() => {
     // Stagger initial loads slightly to avoid overwhelming edge function cold start
     loadEvents();
@@ -532,13 +539,17 @@ export function KalenderScreen() {
         loadEvents();
       }
     }, 3000);
-    const interval = setInterval(loadEvents, 10000);
     return () => {
       clearTimeout(labelTimer);
       clearInterval(retryTimer);
-      clearInterval(interval);
     };
   }, [loadEvents, loadLabels]);
+
+  // ── Supabase Realtime subscription for live sync ──
+  useKvRealtime(
+    [`calendar_events:${DEV_HOUSEHOLD_ID}`, `calendar_labels:${DEV_HOUSEHOLD_ID}`],
+    reloadAll,
+  );
 
   // ── Event CRUD ─────────────────────────────────────────────────
 

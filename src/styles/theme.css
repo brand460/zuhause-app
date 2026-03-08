@@ -267,28 +267,49 @@
 }
 
 .editor-content ul {
-  list-style-type: disc;
-  padding-left: 24px;
+  list-style: none;
+  padding-left: 0;
   margin: 2px 0;
 }
 
 .editor-content ol {
-  list-style-type: decimal;
-  padding-left: 24px;
+  list-style: none;
+  padding-left: 0;
   margin: 2px 0;
+  counter-reset: editor-ol;
 }
 
 .editor-content li {
+  position: relative;
   min-height: 1.625em;
   padding: 1px 0;
+  padding-left: 28px;
   color: var(--text-1);
   font-size: inherit;
   line-height: inherit;
 }
 
-.editor-content li::marker {
+/* Custom bullet marker for ul > li */
+.editor-content ul > li::before {
+  content: '•';
+  position: absolute;
+  left: 16px;
   color: var(--text-2);
   font-size: inherit;
+  line-height: inherit;
+}
+
+/* Custom number marker for ol > li */
+.editor-content ol > li {
+  counter-increment: editor-ol;
+}
+.editor-content ol > li::before {
+  content: counter(editor-ol) '.';
+  position: absolute;
+  left: 14px;
+  color: var(--text-2);
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .editor-content hr {
@@ -309,12 +330,13 @@
 
 /* To-do blocks */
 .editor-content .editor-todo {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 1.625em;
   padding: 1px 0;
-  padding-left: 0;
+  padding-left: 28px;
 }
 
 .editor-content .editor-todo-check {
@@ -357,20 +379,18 @@
 }
 
 /* Todo indentation levels */
-.editor-content .editor-todo[data-indent="1"] { margin-left: 24px; }
-.editor-content .editor-todo[data-indent="2"] { margin-left: 48px; }
-.editor-content .editor-todo[data-indent="3"] { margin-left: 72px; }
+.editor-content .editor-todo[data-indent="1"] { margin-left: 28px; }
+.editor-content .editor-todo[data-indent="2"] { margin-left: 56px; }
+.editor-content .editor-todo[data-indent="3"] { margin-left: 84px; }
+.editor-content .editor-todo[data-indent="4"] { margin-left: 112px; }
 
 /* Li drag handle */
 .li-drag-handle {
   position: absolute;
   width: 16px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
-  padding-top: 2px;
-  font-size: 10px;
-  line-height: 1;
   color: var(--text-3);
   cursor: grab;
   user-select: none;
@@ -378,6 +398,11 @@
   -webkit-touch-callout: none;
   touch-action: none;
   z-index: 5;
+  opacity: 0.6;
+}
+.li-drag-handle:active {
+  cursor: grabbing;
+  opacity: 1;
 }
 
 /* Flash animation when indent level changes */
@@ -389,12 +414,13 @@
   animation: li-indent-flash 200ms ease-out;
 }
 
-/* Nested lists */
+/* Nested lists — indentation comes from parent li padding-left */
 .editor-content ul ul,
 .editor-content ol ol,
 .editor-content ul ol,
 .editor-content ol ul {
   margin: 0;
+  padding-left: 0;
 }
 
 /* Editor tables */

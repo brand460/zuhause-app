@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "../supabase-client";
+import { useKvRealtime, markLocalWrite } from "../use-kv-realtime";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import type {
   Recipe, MealPlanEntry, Ingredient, RecipeStep, CategoryFilter,
@@ -152,6 +153,12 @@ export function KochenScreen() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // ── Supabase Realtime subscription for live sync ──
+  useKvRealtime(
+    [`recipes:${HOUSEHOLD_ID}`, `meal_plan:${HOUSEHOLD_ID}`],
+    loadData,
+  );
+
   // Center today in the week scroller on mount and when switching to wochenplaner tab
   useEffect(() => {
     if (kochenTab === "wochenplaner" && weekScrollRef.current) {
@@ -169,6 +176,7 @@ export function KochenScreen() {
   const saveRecipes = useCallback(async (updated: Recipe[]) => {
     setRecipes(updated);
     try {
+      markLocalWrite();
       await apiFetch("/recipes", {
         method: "PUT",
         body: JSON.stringify({ household_id: HOUSEHOLD_ID, recipes: updated }),
@@ -182,6 +190,7 @@ export function KochenScreen() {
   const saveMealPlan = useCallback(async (updated: MealPlanEntry[]) => {
     setMealPlan(updated);
     try {
+      markLocalWrite();
       await apiFetch("/meal-plan", {
         method: "PUT",
         body: JSON.stringify({ household_id: HOUSEHOLD_ID, entries: updated }),

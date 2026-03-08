@@ -57,6 +57,7 @@ import {
 import { API_BASE } from "../supabase-client";
 import { publicAnonKey } from "/utils/supabase/info";
 import { useKeyboardHeight } from "./use-keyboard-height";
+import { useKvRealtime, markLocalWrite } from "../use-kv-realtime";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface StoreSettingEntry {
@@ -2174,6 +2175,12 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
     };
   }, [reloadAllData]);
 
+  // ── Supabase Realtime subscription for live sync ──
+  useKvRealtime(
+    [`shopping:${DEV_HOUSEHOLD_ID}`, `store_settings:${DEV_HOUSEHOLD_ID}`, `global_items:${DEV_HOUSEHOLD_ID}`, `custom_categories:${DEV_HOUSEHOLD_ID}`],
+    reloadAllData,
+  );
+
   const applyStoreSettings = (
     baseStores: StoreInfo[],
     settings: StoreSettingEntry[]
@@ -2231,7 +2238,7 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
   // ── Debounced save for items ───────────────────────────────────
   const debouncedSave = useCallback((newItems: ShoppingItem[]) => {
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
-    saveTimeout.current = setTimeout(() => saveItems(newItems), 300);
+    saveTimeout.current = setTimeout(() => { markLocalWrite(); saveItems(newItems); }, 300);
   }, []);
 
   const updateItems = useCallback(
@@ -2252,7 +2259,7 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
       if (settingsSaveTimeout.current)
         clearTimeout(settingsSaveTimeout.current);
       settingsSaveTimeout.current = setTimeout(
-        () => saveStoreSettings(newSettings),
+        () => { markLocalWrite(); saveStoreSettings(newSettings); },
         300
       );
     },
@@ -2761,7 +2768,7 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
         const next = [...prev, name];
         // Debounce save to server
         if (customCatSaveTimeout.current) clearTimeout(customCatSaveTimeout.current);
-        customCatSaveTimeout.current = setTimeout(() => saveCustomCategories(next), 300);
+        customCatSaveTimeout.current = setTimeout(() => { markLocalWrite(); saveCustomCategories(next); }, 300);
         return next;
       });
     },

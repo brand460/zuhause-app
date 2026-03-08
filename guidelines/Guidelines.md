@@ -172,8 +172,13 @@ Für Suche: `type="search"` oder in `<form autoComplete="off">` wrappen
 ## 🗄️ Supabase
 
 ### Realtime
+- **Alle Datenquellen in der App müssen Supabase Realtime-Subscriptions nutzen.** Die App soll an jeder Stelle live wirken — Änderungen eines Nutzers erscheinen sofort bei allen anderen ohne Reload. Orientiere dich immer an der bestehenden Shopping-Listen-Implementierung als Referenz.
 - Subscription bei `visibilitychange` neu aufbauen
-- Alle Realtime-Tabellen: `shopping_items`, `meal_plan`, `calendar_events`
+- Alle Realtime-Keys: `shopping:*`, `recipes:*`, `meal_plan:*`, `calendar_events:*`, `calendar_labels:*`, `custom_pages:*`, `custom_blocks:*`
+- KV-Tabelle `kv_store_2a26506b` als Realtime-Quelle (filter by `key`)
+- Eigene Änderungen mit 300ms Debounce um Echo zu vermeiden
+- Subscriptions sauber beenden bei Unmount / Tab-Wechsel via `supabase.removeChannel()`
+- Shared Hook: `useKvRealtime(keys, onRemoteChange)` in `/src/app/components/use-kv-realtime.ts`
 
 ### RLS
 - Alle Tabellen haben RLS aktiviert

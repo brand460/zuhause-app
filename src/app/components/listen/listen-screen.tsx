@@ -17,6 +17,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { apiFetch } from "../supabase-client";
+import { useKvRealtime, markLocalWrite } from "../use-kv-realtime";
 import {
   DndContext,
   PointerSensor,
@@ -177,53 +178,10 @@ export function ListenScreen() {
   const isMobile = useIsMobile();
   const isTouch = useIsTouch();
 
-  // ── Load data ──────────────────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [pRes, bRes] = await Promise.all([
-          apiFetch(`/custom-pages?household_id=${HOUSEHOLD_ID}`),
-          apiFetch(`/custom-blocks?household_id=${HOUSEHOLD_ID}`),
-        ]);
-        if (cancelled) return;
-        const loadedPages: Page[] = pRes.pages || [];
-        const rawBlocks = bRes.blocks;
-
-        if (loadedPages.length === 0) {
-          setPages(DEFAULT_PAGES);
-          setPageContents(DEFAULT_CONTENTS);
-          setActivePageId("p1");
-          saveData(DEFAULT_PAGES, DEFAULT_CONTENTS);
-        } else {
-          // Detect format: new format is an object/map, old format is an array
-          let contents: PageContents;
-          if (Array.isArray(rawBlocks)) {
-            contents = migrateOldBlocks(rawBlocks);
-          } else if (rawBlocks && typeof rawBlocks === "object") {
-            contents = rawBlocks as PageContents;
-          } else {
-            contents = {};
-          }
-          setPages(loadedPages);
-          setPageContents(contents);
-          setActivePageId(loadedPages[0]?.id || null);
-        }
-        setLoaded(true);
-      } catch (err) {
-        console.error("Fehler beim Laden der Listen-Daten:", err);
-        setPages(DEFAULT_PAGES);
-        setPageContents(DEFAULT_CONTENTS);
-        setActivePageId("p1");
-        setLoaded(true);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
   // ── Save helpers ───────────────────────────────────────────────
   const saveData = useCallback(async (p: Page[], c: PageContents) => {
     try {
+      markLocalWrite();
       await Promise.all([
         apiFetch("/custom-pages", {
           method: "PUT",
@@ -239,12 +197,70 @@ export function ListenScreen() {
     }
   }, []);
 
+  const lastLocalListenWrite = useRef(0);
+
   const scheduleSave = useCallback(
     (p: Page[], c: PageContents) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => saveData(p, c), 500);
+      saveTimerRef.current = setTimeout(() => {
+        lastLocalListenWrite.current = Date.now();
+        saveData(p, c);
+      }, 500);
     },
     [saveData]
+  );
+
+  // ── Load data ──────────────────────────────────────────────────
+
+  const loadListenData = useCallback(async (isInitial = false) => {
+    try {
+      const [pRes, bRes] = await Promise.all([
+        apiFetch(`/custom-pages?household_id=${HOUSEHOLD_ID}`),
+        apiFetch(`/custom-blocks?household_id=${HOUSEHOLD_ID}`),
+      ]);
+      // Skip remote updates if we just wrote locally
+      if (!isInitial && Date.now() - lastLocalListenWrite.current < 2000) return;
+      const loadedPages: Page[] = pRes.pages || [];
+      const rawBlocks = bRes.blocks;
+
+      if (loadedPages.length === 0 && isInitial) {
+        setPages(DEFAULT_PAGES);
+        setPageContents(DEFAULT_CONTENTS);
+        setActivePageId("p1");
+        saveData(DEFAULT_PAGES, DEFAULT_CONTENTS);
+      } else if (loadedPages.length > 0) {
+        let contents: PageContents;
+        if (Array.isArray(rawBlocks)) {
+          contents = migrateOldBlocks(rawBlocks);
+        } else if (rawBlocks && typeof rawBlocks === "object") {
+          contents = rawBlocks as PageContents;
+        } else {
+          contents = {};
+        }
+        setPages(loadedPages);
+        setPageContents(contents);
+        if (isInitial) setActivePageId(loadedPages[0]?.id || null);
+      }
+      if (isInitial) setLoaded(true);
+    } catch (err) {
+      console.error("Fehler beim Laden der Listen-Daten:", err);
+      if (isInitial) {
+        setPages(DEFAULT_PAGES);
+        setPageContents(DEFAULT_CONTENTS);
+        setActivePageId("p1");
+        setLoaded(true);
+      }
+    }
+  }, [saveData]);
+
+  useEffect(() => {
+    loadListenData(true);
+  }, []);
+
+  // ── Supabase Realtime subscription for live sync ──
+  useKvRealtime(
+    [`custom_pages:${HOUSEHOLD_ID}`, `custom_blocks:${HOUSEHOLD_ID}`],
+    useCallback(() => loadListenData(false), [loadListenData]),
   );
 
   // ── Page operations ────────────────────────────────────────────
@@ -1373,16 +1389,16 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
 
   // ── Li drag handles ──────────────────────────────────────────────
   const editorWrapperRef = useRef<HTMLDivElement>(null);
-  const [liPositions, setLiPositions] = useState<Array<{ top: number; left: number; height: number }>>([]);
-  const liElsRef = useRef<HTMLLIElement[]>([]);
+  const [liPositions, setLiPositions] = useState<Array<{ top: number; left: number; type: "li" | "todo" }>>([]);
+  const liElsRef = useRef<HTMLElement[]>([]);
   const liDragRef = useRef<{
-    li: HTMLLIElement;
+    el: HTMLElement;
+    elType: "li" | "todo";
     intent: "none" | "vertical" | "horizontal";
     startX: number;
     startY: number;
-    ghostEl: HTMLDivElement;
     parentList: HTMLElement;
-    siblings: HTMLLIElement[];
+    siblings: HTMLElement[];
     srcIdx: number;
     indentLevel: number;
     lastFlashedLevel: number;
@@ -1390,23 +1406,41 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   } | null>(null);
   const [liDragging, setLiDragging] = useState(false);
   const [liDropIndicator, setLiDropIndicator] = useState<number | null>(null);
+  const HANDLE_LINE_H = 26;
 
-  // Compute positions of all <li> elements relative to the editor wrapper
   const recomputeLiPositions = useCallback(() => {
     const wrapper = editorWrapperRef.current;
     const editor = editorRef.current;
     if (!wrapper || !editor) { setLiPositions([]); liElsRef.current = []; return; }
-    const lis = Array.from(editor.querySelectorAll("li")) as HTMLLIElement[];
     const wrapperRect = wrapper.getBoundingClientRect();
-    const positions = lis.map((li) => {
+    const elements: HTMLElement[] = [];
+    const positions: Array<{ top: number; left: number; type: "li" | "todo" }> = [];
+    // <li> elements
+    const lis = Array.from(editor.querySelectorAll("li")) as HTMLLIElement[];
+    for (const li of lis) {
+      let depth = 0;
+      let el: HTMLElement | null = li.parentElement;
+      while (el && el !== editor) {
+        if (el.tagName === "UL" || el.tagName === "OL") depth++;
+        el = el.parentElement;
+      }
+      // Handle at li left edge: wrapperPad(32) + (depth-1)*liPadLeft(28)
+      const handleLeft = 32 + (depth - 1) * 28;
       const r = li.getBoundingClientRect();
-      return {
-        top: r.top - wrapperRect.top,
-        left: r.left - wrapperRect.left - 18,
-        height: r.height,
-      };
-    });
-    liElsRef.current = lis;
+      elements.push(li);
+      positions.push({ top: r.top - wrapperRect.top, left: handleLeft, type: "li" });
+    }
+    // .editor-todo elements
+    const todos = Array.from(editor.querySelectorAll(".editor-todo")) as HTMLElement[];
+    for (const todo of todos) {
+      const indent = parseInt(todo.getAttribute("data-indent") || "0", 10) || 0;
+      // Handle at todo left edge: wrapperPad(32) + indent*28
+      const handleLeft = 32 + indent * 28;
+      const r = todo.getBoundingClientRect();
+      elements.push(todo);
+      positions.push({ top: r.top - wrapperRect.top, left: handleLeft, type: "todo" });
+    }
+    liElsRef.current = elements;
     setLiPositions(positions);
   }, []);
 
@@ -1509,48 +1543,73 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     sel?.addRange(r);
   }, []);
 
-  // Get indent level of an <li>
-  const getLiIndentLevel = useCallback((li: HTMLLIElement): number => {
+  // Get indent level of an <li> or .editor-todo
+  const getLiIndentLevel = useCallback((el: HTMLElement): number => {
+    if (el.classList.contains("editor-todo")) {
+      return parseInt(el.getAttribute("data-indent") || "0", 10) || 0;
+    }
     let level = 0;
-    let el: HTMLElement | null = li.parentElement;
-    while (el && el !== editorRef.current) {
-      if (el.tagName === "UL" || el.tagName === "OL") level++;
-      el = el.parentElement;
+    let p: HTMLElement | null = el.parentElement;
+    while (p && p !== editorRef.current) {
+      if (p.tagName === "UL" || p.tagName === "OL") level++;
+      p = p.parentElement;
     }
     return Math.max(0, level - 1);
   }, []);
 
-  // Indent a specific <li> into the previous sibling
-  const indentLi = useCallback((li: HTMLLIElement): boolean => {
-    const parentList = li.parentElement;
+  // Indent a specific <li> or .editor-todo (unified: needs predecessor, max 4 levels)
+  const indentLi = useCallback((el: HTMLElement): boolean => {
+    if (el.classList.contains("editor-todo")) {
+      const cur = parseInt(el.getAttribute("data-indent") || "0", 10) || 0;
+      if (cur >= 4) return false;
+      // Must have a predecessor todo at same or deeper indent level
+      let prev: Element | null = el.previousElementSibling;
+      while (prev && !prev.classList.contains("editor-todo")) prev = prev.previousElementSibling;
+      if (!prev) return false;
+      const prevIndent = parseInt((prev as HTMLElement).getAttribute("data-indent") || "0", 10) || 0;
+      if (prevIndent < cur) return false;
+      el.setAttribute("data-indent", String(cur + 1));
+      syncContent();
+      return true;
+    }
+    // <li>: nest into previous sibling's sub-list
+    const parentList = el.parentElement;
     if (!parentList || (parentList.tagName !== "UL" && parentList.tagName !== "OL")) return false;
-    if (getLiIndentLevel(li) >= 4) return false;
-    const prevLi = li.previousElementSibling;
+    if (getLiIndentLevel(el) >= 4) return false;
+    const prevLi = el.previousElementSibling;
     if (!prevLi || prevLi.tagName !== "LI") return false;
     const tag = parentList.tagName.toLowerCase();
     let subList = prevLi.querySelector(`:scope > ${tag}`) as HTMLElement | null;
     if (!subList) { subList = document.createElement(tag); prevLi.appendChild(subList); }
-    subList.appendChild(li);
+    subList.appendChild(el);
     syncContent();
     return true;
   }, [getLiIndentLevel, syncContent]);
 
-  // Outdent a specific <li> out of its parent list
-  const outdentLi = useCallback((li: HTMLLIElement): boolean => {
-    const parentList = li.parentElement;
+  // Outdent a specific <li> or .editor-todo (unified: min level 0)
+  const outdentLi = useCallback((el: HTMLElement): boolean => {
+    if (el.classList.contains("editor-todo")) {
+      const cur = parseInt(el.getAttribute("data-indent") || "0", 10) || 0;
+      if (cur <= 0) return false;
+      el.setAttribute("data-indent", String(cur - 1));
+      syncContent();
+      return true;
+    }
+    // <li>: move out of nested list
+    const parentList = el.parentElement;
     if (!parentList) return false;
     const grandparentLi = parentList.parentElement;
     if (!grandparentLi || grandparentLi.tagName !== "LI") return false;
     const outerList = grandparentLi.parentElement;
     if (!outerList) return false;
     const siblingsAfter: Element[] = [];
-    let next = li.nextElementSibling;
+    let next = el.nextElementSibling;
     while (next) { siblingsAfter.push(next); next = next.nextElementSibling; }
-    outerList.insertBefore(li, grandparentLi.nextSibling);
+    outerList.insertBefore(el, grandparentLi.nextSibling);
     if (siblingsAfter.length > 0) {
       const subList = document.createElement(parentList.tagName.toLowerCase());
       siblingsAfter.forEach((s) => subList.appendChild(s));
-      li.appendChild(subList);
+      el.appendChild(subList);
     }
     if (parentList.children.length === 0) parentList.remove();
     syncContent();
@@ -1560,34 +1619,36 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   // ── Li drag touch handlers ──
   const handleLiTouchStart = useCallback((e: React.TouchEvent, idx: number) => {
     const touch = e.touches[0];
-    if (touch.clientX < 20) return; // Edge guard: Android swipe-back zone
+    if (touch.clientX < 20) return;
     e.preventDefault();
     e.stopPropagation();
-    const li = liElsRef.current[idx];
-    if (!li) return;
-    const parentList = li.parentElement;
-    if (!parentList || (parentList.tagName !== "UL" && parentList.tagName !== "OL")) return;
-    const siblings = Array.from(parentList.children).filter((c) => c.tagName === "LI") as HTMLLIElement[];
-    const srcIdx = siblings.indexOf(li);
+    const el = liElsRef.current[idx];
+    if (!el) return;
+    const pos = liPositions[idx];
+    const elType = pos?.type || "li";
 
-    // Create ghost
-    const ghost = document.createElement("div");
-    ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;background:var(--surface);border:1px solid var(--zu-border);border-radius:8px;padding:4px 10px;font-size:14px;color:var(--text-1);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.15);left:${touch.clientX - 30}px;top:${touch.clientY - 20}px;`;
-    const textContent = Array.from(li.childNodes)
-      .filter((n) => !(n instanceof HTMLElement && (n.tagName === "UL" || n.tagName === "OL")))
-      .map((n) => n.textContent || "").join("").trim();
-    ghost.textContent = textContent || "\u2026";
-    document.body.appendChild(ghost);
-    li.style.opacity = "0.4";
-
-    const level = getLiIndentLevel(li);
+    let parentList: HTMLElement;
+    let siblings: HTMLElement[];
+    if (elType === "todo") {
+      // Todos are siblings at editor top level — gather consecutive .editor-todo elements around this one
+      parentList = el.parentElement!;
+      siblings = Array.from(parentList.children).filter((c) => c.classList.contains("editor-todo")) as HTMLElement[];
+    } else {
+      const pl = el.parentElement;
+      if (!pl || (pl.tagName !== "UL" && pl.tagName !== "OL")) return;
+      parentList = pl;
+      siblings = Array.from(pl.children).filter((c) => c.tagName === "LI") as HTMLElement[];
+    }
+    const srcIdx = siblings.indexOf(el);
+    el.style.opacity = "0.4";
+    const level = getLiIndentLevel(el);
     liDragRef.current = {
-      li, intent: "none", startX: touch.clientX, startY: touch.clientY,
-      ghostEl: ghost, parentList, siblings, srcIdx,
+      el, elType, intent: "none", startX: touch.clientX, startY: touch.clientY,
+      parentList, siblings, srcIdx,
       indentLevel: level, lastFlashedLevel: level, dropIdx: srcIdx,
     };
     setLiDragging(true);
-  }, [getLiIndentLevel]);
+  }, [getLiIndentLevel, liPositions]);
 
   const handleLiTouchMove = useCallback((e: TouchEvent) => {
     const state = liDragRef.current;
@@ -1596,8 +1657,6 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     const touch = e.touches[0];
     const dx = touch.clientX - state.startX;
     const dy = touch.clientY - state.startY;
-    state.ghostEl.style.left = `${touch.clientX - 30}px`;
-    state.ghostEl.style.top = `${touch.clientY - 20}px`;
 
     if (state.intent === "none") {
       if (Math.sqrt(dx * dx + dy * dy) >= 10) {
@@ -1611,34 +1670,34 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
       const targetLevel = Math.max(0, Math.min(4, state.indentLevel + rawDelta));
       if (targetLevel !== state.lastFlashedLevel) {
         const diff = targetLevel - state.lastFlashedLevel;
-        const success = diff > 0 ? indentLi(state.li) : outdentLi(state.li);
+        const success = diff > 0 ? indentLi(state.el) : outdentLi(state.el);
         if (success) {
-          state.lastFlashedLevel = getLiIndentLevel(state.li);
-          state.li.classList.remove("li-indent-flash");
-          void state.li.offsetWidth;
-          state.li.classList.add("li-indent-flash");
-          const newParent = state.li.parentElement;
-          if (newParent && (newParent.tagName === "UL" || newParent.tagName === "OL")) {
-            state.parentList = newParent;
-            state.siblings = Array.from(newParent.children).filter((c) => c.tagName === "LI") as HTMLLIElement[];
-            state.srcIdx = state.siblings.indexOf(state.li);
-            state.dropIdx = state.srcIdx;
+          state.lastFlashedLevel = getLiIndentLevel(state.el);
+          state.el.classList.remove("li-indent-flash");
+          void state.el.offsetWidth;
+          state.el.classList.add("li-indent-flash");
+          if (state.elType === "li") {
+            const newParent = state.el.parentElement;
+            if (newParent && (newParent.tagName === "UL" || newParent.tagName === "OL")) {
+              state.parentList = newParent;
+              state.siblings = Array.from(newParent.children).filter((c) => c.tagName === "LI") as HTMLElement[];
+              state.srcIdx = state.siblings.indexOf(state.el);
+              state.dropIdx = state.srcIdx;
+            }
           }
         }
       }
     } else {
-      // Vertical: determine drop position among siblings
       const wrapper = editorWrapperRef.current;
       if (!wrapper) return;
       const wrapperRect = wrapper.getBoundingClientRect();
       let targetIdx = state.siblings.length;
       for (let i = 0; i < state.siblings.length; i++) {
-        if (state.siblings[i] === state.li) continue;
+        if (state.siblings[i] === state.el) continue;
         const rect = state.siblings[i].getBoundingClientRect();
         if (touch.clientY < rect.top + rect.height / 2) { targetIdx = i; break; }
       }
       state.dropIdx = targetIdx;
-      // Compute drop indicator
       if (targetIdx < state.siblings.length) {
         setLiDropIndicator(state.siblings[targetIdx].getBoundingClientRect().top - wrapperRect.top);
       } else {
@@ -1651,15 +1710,20 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   const handleLiTouchEnd = useCallback(() => {
     const state = liDragRef.current;
     if (!state) return;
-    state.ghostEl.remove();
-    state.li.style.opacity = "";
-    state.li.classList.remove("li-indent-flash");
+    state.el.style.opacity = "";
+    state.el.classList.remove("li-indent-flash");
     if (state.intent === "vertical" && state.dropIdx !== state.srcIdx) {
-      const { li, parentList, srcIdx, dropIdx } = state;
-      parentList.removeChild(li);
-      const remaining = Array.from(parentList.children).filter((c) => c.tagName === "LI");
+      const { el, parentList, srcIdx, dropIdx } = state;
+      parentList.removeChild(el);
+      const remaining = Array.from(parentList.children).filter((c) =>
+        state.elType === "todo" ? c.classList.contains("editor-todo") : c.tagName === "LI"
+      );
       const adj = dropIdx > srcIdx ? dropIdx - 1 : dropIdx;
-      if (adj >= remaining.length) { parentList.appendChild(li); } else { parentList.insertBefore(li, remaining[adj]); }
+      if (adj >= remaining.length) {
+        const lastSib = remaining[remaining.length - 1];
+        if (lastSib && lastSib.nextSibling) { parentList.insertBefore(el, lastSib.nextSibling); }
+        else { parentList.appendChild(el); }
+      } else { parentList.insertBefore(el, remaining[adj]); }
       syncContent();
     }
     liDragRef.current = null;
@@ -1672,28 +1736,32 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   const handleLiMouseDown = useCallback((e: React.MouseEvent, idx: number) => {
     e.preventDefault();
     e.stopPropagation();
-    const li = liElsRef.current[idx];
-    if (!li) return;
-    const parentList = li.parentElement;
-    if (!parentList || (parentList.tagName !== "UL" && parentList.tagName !== "OL")) return;
-    const siblings = Array.from(parentList.children).filter((c) => c.tagName === "LI") as HTMLLIElement[];
-    const srcIdx = siblings.indexOf(li);
-    const ghost = document.createElement("div");
-    ghost.style.cssText = `position:fixed;pointer-events:none;z-index:9999;background:var(--surface);border:1px solid var(--zu-border);border-radius:8px;padding:4px 10px;font-size:14px;color:var(--text-1);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,0.15);left:${e.clientX - 30}px;top:${e.clientY - 20}px;`;
-    const textContent = Array.from(li.childNodes)
-      .filter((n) => !(n instanceof HTMLElement && (n.tagName === "UL" || n.tagName === "OL")))
-      .map((n) => n.textContent || "").join("").trim();
-    ghost.textContent = textContent || "\u2026";
-    document.body.appendChild(ghost);
-    li.style.opacity = "0.4";
-    const level = getLiIndentLevel(li);
+    const el = liElsRef.current[idx];
+    if (!el) return;
+    const pos = liPositions[idx];
+    const elType = pos?.type || "li";
+
+    let parentList: HTMLElement;
+    let siblings: HTMLElement[];
+    if (elType === "todo") {
+      parentList = el.parentElement!;
+      siblings = Array.from(parentList.children).filter((c) => c.classList.contains("editor-todo")) as HTMLElement[];
+    } else {
+      const pl = el.parentElement;
+      if (!pl || (pl.tagName !== "UL" && pl.tagName !== "OL")) return;
+      parentList = pl;
+      siblings = Array.from(pl.children).filter((c) => c.tagName === "LI") as HTMLElement[];
+    }
+    const srcIdx = siblings.indexOf(el);
+    el.style.opacity = "0.4";
+    const level = getLiIndentLevel(el);
     liDragRef.current = {
-      li, intent: "none", startX: e.clientX, startY: e.clientY,
-      ghostEl: ghost, parentList, siblings, srcIdx,
+      el, elType, intent: "none", startX: e.clientX, startY: e.clientY,
+      parentList, siblings, srcIdx,
       indentLevel: level, lastFlashedLevel: level, dropIdx: srcIdx,
     };
     setLiDragging(true);
-  }, [getLiIndentLevel]);
+  }, [getLiIndentLevel, liPositions]);
 
   const handleLiMouseMove = useCallback((e: MouseEvent) => {
     const state = liDragRef.current;
@@ -1701,8 +1769,6 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     e.preventDefault();
     const dx = e.clientX - state.startX;
     const dy = e.clientY - state.startY;
-    state.ghostEl.style.left = `${e.clientX - 30}px`;
-    state.ghostEl.style.top = `${e.clientY - 20}px`;
     if (state.intent === "none") {
       if (Math.sqrt(dx * dx + dy * dy) >= 10) {
         state.intent = Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
@@ -1714,18 +1780,20 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
       const targetLevel = Math.max(0, Math.min(4, state.indentLevel + rawDelta));
       if (targetLevel !== state.lastFlashedLevel) {
         const diff = targetLevel - state.lastFlashedLevel;
-        const success = diff > 0 ? indentLi(state.li) : outdentLi(state.li);
+        const success = diff > 0 ? indentLi(state.el) : outdentLi(state.el);
         if (success) {
-          state.lastFlashedLevel = getLiIndentLevel(state.li);
-          state.li.classList.remove("li-indent-flash");
-          void state.li.offsetWidth;
-          state.li.classList.add("li-indent-flash");
-          const newParent = state.li.parentElement;
-          if (newParent && (newParent.tagName === "UL" || newParent.tagName === "OL")) {
-            state.parentList = newParent;
-            state.siblings = Array.from(newParent.children).filter((c) => c.tagName === "LI") as HTMLLIElement[];
-            state.srcIdx = state.siblings.indexOf(state.li);
-            state.dropIdx = state.srcIdx;
+          state.lastFlashedLevel = getLiIndentLevel(state.el);
+          state.el.classList.remove("li-indent-flash");
+          void state.el.offsetWidth;
+          state.el.classList.add("li-indent-flash");
+          if (state.elType === "li") {
+            const newParent = state.el.parentElement;
+            if (newParent && (newParent.tagName === "UL" || newParent.tagName === "OL")) {
+              state.parentList = newParent;
+              state.siblings = Array.from(newParent.children).filter((c) => c.tagName === "LI") as HTMLElement[];
+              state.srcIdx = state.siblings.indexOf(state.el);
+              state.dropIdx = state.srcIdx;
+            }
           }
         }
       }
@@ -1735,7 +1803,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
       const wrapperRect = wrapper.getBoundingClientRect();
       let targetIdx = state.siblings.length;
       for (let i = 0; i < state.siblings.length; i++) {
-        if (state.siblings[i] === state.li) continue;
+        if (state.siblings[i] === state.el) continue;
         const rect = state.siblings[i].getBoundingClientRect();
         if (e.clientY < rect.top + rect.height / 2) { targetIdx = i; break; }
       }
@@ -1752,15 +1820,20 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   const handleLiMouseUp = useCallback(() => {
     const state = liDragRef.current;
     if (!state) return;
-    state.ghostEl.remove();
-    state.li.style.opacity = "";
-    state.li.classList.remove("li-indent-flash");
+    state.el.style.opacity = "";
+    state.el.classList.remove("li-indent-flash");
     if (state.intent === "vertical" && state.dropIdx !== state.srcIdx) {
-      const { li, parentList, srcIdx, dropIdx } = state;
-      parentList.removeChild(li);
-      const remaining = Array.from(parentList.children).filter((c) => c.tagName === "LI");
+      const { el, parentList, srcIdx, dropIdx } = state;
+      parentList.removeChild(el);
+      const remaining = Array.from(parentList.children).filter((c) =>
+        state.elType === "todo" ? c.classList.contains("editor-todo") : c.tagName === "LI"
+      );
       const adj = dropIdx > srcIdx ? dropIdx - 1 : dropIdx;
-      if (adj >= remaining.length) { parentList.appendChild(li); } else { parentList.insertBefore(li, remaining[adj]); }
+      if (adj >= remaining.length) {
+        const lastSib = remaining[remaining.length - 1];
+        if (lastSib && lastSib.nextSibling) { parentList.insertBefore(el, lastSib.nextSibling); }
+        else { parentList.appendChild(el); }
+      } else { parentList.insertBefore(el, remaining[adj]); }
       syncContent();
     }
     liDragRef.current = null;
@@ -3202,17 +3275,19 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
             </>
           )}
 
-          {/* Li drag handles — always visible next to bullet/numbered list items */}
+          {/* Drag handles for li and todo items */}
           {!liDragging && liPositions.map((pos, i) => (
             <div
               key={i}
               className="li-drag-handle"
-              style={{ top: pos.top, left: pos.left, height: Math.max(pos.height, 22) }}
+              style={{ top: pos.top, left: pos.left, height: HANDLE_LINE_H }}
               onTouchStart={(e) => handleLiTouchStart(e, i)}
               onMouseDown={(e) => handleLiMouseDown(e, i)}
               onContextMenu={(e) => e.preventDefault()}
+              role="presentation"
+              aria-hidden="true"
             >
-              {"\u283F"}
+              <GripVertical className="w-3 h-3" />
             </div>
           ))}
 
