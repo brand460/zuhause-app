@@ -1667,6 +1667,16 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   const [liDropIndicator, setLiDropIndicator] = useState<number | null>(null);
   const HANDLE_LINE_H = 26;
 
+  // Helper: get the "own-line" midpoint of a <li>, excluding nested sublists.
+  // Parent <li> elements have very tall bounding rects (they contain nested <ul>/<ol>),
+  // so using the full rect midpoint makes the first child position unreachable.
+  const getOwnMidpoint = useCallback((el: HTMLElement): number => {
+    const rect = el.getBoundingClientRect();
+    const nested = el.querySelector(":scope > ul, :scope > ol");
+    const ownBottom = nested ? nested.getBoundingClientRect().top : rect.bottom;
+    return (rect.top + ownBottom) / 2;
+  }, []);
+
   const recomputeLiPositions = useCallback(() => {
     const wrapper = editorWrapperRef.current;
     const editor = editorRef.current;
@@ -1962,8 +1972,8 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
       let targetIdx = items.length;
       for (let i = 0; i < items.length; i++) {
         if (items[i] === state.el || state.el.contains(items[i])) continue; // skip self & descendants
-        const rect = items[i].getBoundingClientRect();
-        if (touch.clientY < rect.top + rect.height / 2) { targetIdx = i; break; }
+        // Use own-line midpoint so first child position in nested lists is reachable
+        if (touch.clientY < getOwnMidpoint(items[i])) { targetIdx = i; break; }
       }
       state.dropIdx = targetIdx;
       if (targetIdx < items.length && !state.el.contains(items[targetIdx])) {
@@ -1977,7 +1987,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
         if (last) setLiDropIndicator(last.getBoundingClientRect().bottom - wrapperRect.top);
       }
     }
-  }, [indentLi, outdentLi, getLiIndentLevel]);
+  }, [indentLi, outdentLi, getLiIndentLevel, getOwnMidpoint]);
 
   const handleLiTouchEnd = useCallback(() => {
     const state = liDragRef.current;
@@ -2115,8 +2125,8 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
       let targetIdx = items.length;
       for (let i = 0; i < items.length; i++) {
         if (items[i] === state.el || state.el.contains(items[i])) continue;
-        const rect = items[i].getBoundingClientRect();
-        if (e.clientY < rect.top + rect.height / 2) { targetIdx = i; break; }
+        // Use own-line midpoint so first child position in nested lists is reachable
+        if (e.clientY < getOwnMidpoint(items[i])) { targetIdx = i; break; }
       }
       state.dropIdx = targetIdx;
       if (targetIdx < items.length && !state.el.contains(items[targetIdx])) {
@@ -2129,7 +2139,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
         if (last) setLiDropIndicator(last.getBoundingClientRect().bottom - wrapperRect.top);
       }
     }
-  }, [indentLi, outdentLi, getLiIndentLevel]);
+  }, [indentLi, outdentLi, getLiIndentLevel, getOwnMidpoint]);
 
   const handleLiMouseUp = useCallback(() => {
     const state = liDragRef.current;
