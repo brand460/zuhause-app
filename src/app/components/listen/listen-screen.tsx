@@ -1661,7 +1661,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   } | null>(null);
   const [liDragging, setLiDragging] = useState(false);
   const [liDropIndicator, setLiDropIndicator] = useState<number | null>(null);
-  const HANDLE_LINE_H = 26;
+  const HANDLE_LINE_H = 44;
 
   // Helper: get the "own-line" midpoint of a <li>, excluding nested sublists.
   // Parent <li> elements have very tall bounding rects (they contain nested <ul>/<ol>),
@@ -1692,18 +1692,28 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
       // Handle at li left edge: wrapperPad(32) + (depth-1)*liPadLeft(28)
       const handleLeft = 32 + (depth - 1) * 28;
       const r = li.getBoundingClientRect();
+      // Center handle vertically on the first text line
+      const computedLH = parseFloat(getComputedStyle(li).lineHeight) || 23;
+      const computedPT = parseFloat(getComputedStyle(li).paddingTop) || 0;
+      const firstLineCenter = computedPT + computedLH / 2;
+      const handleTop = r.top - wrapperRect.top + firstLineCenter - HANDLE_LINE_H / 2;
       elements.push(li);
-      positions.push({ top: r.top - wrapperRect.top, left: handleLeft, type: "li" });
+      positions.push({ top: handleTop, left: handleLeft, type: "li" });
     }
     // .editor-todo elements
     const todos = Array.from(editor.querySelectorAll(".editor-todo")) as HTMLElement[];
     for (const todo of todos) {
       const indent = parseInt(todo.getAttribute("data-indent") || "0", 10) || 0;
-      // Handle at todo left edge: wrapperPad(32) + indent*28
-      const handleLeft = 32 + indent * 28;
+      // Handle at todo left edge: wrapperPad(32) + indent*28 + 12 (checkbox starts at 28px vs bullet at 16px)
+      const handleLeft = 32 + indent * 28 + 12;
       const r = todo.getBoundingClientRect();
+      // Center handle vertically on the first text line
+      const computedLH = parseFloat(getComputedStyle(todo).lineHeight) || 23;
+      const computedPT = parseFloat(getComputedStyle(todo).paddingTop) || 0;
+      const firstLineCenter = computedPT + computedLH / 2;
+      const handleTop = r.top - wrapperRect.top + firstLineCenter - HANDLE_LINE_H / 2;
       elements.push(todo);
-      positions.push({ top: r.top - wrapperRect.top, left: handleLeft, type: "todo" });
+      positions.push({ top: handleTop, left: handleLeft, type: "todo" });
     }
     liElsRef.current = elements;
     setLiPositions(positions);
@@ -1884,7 +1894,6 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   // ── Li drag touch handlers ──
   const handleLiTouchStart = useCallback((e: React.TouchEvent, idx: number) => {
     const touch = e.touches[0];
-    if (touch.clientX < 20) return;
     e.preventDefault();
     e.stopPropagation();
     const el = liElsRef.current[idx];

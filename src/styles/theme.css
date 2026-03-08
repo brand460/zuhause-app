@@ -387,7 +387,8 @@
 /* Li drag handle */
 .li-drag-handle {
   position: absolute;
-  width: 16px;
+  width: 32px;
+  margin-left: -16px;
   display: flex;
   align-items: center;
   justify-content: center;
