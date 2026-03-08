@@ -8,8 +8,6 @@ import React, {
 import {
   Menu,
   ChevronRight,
-  ChevronUp,
-  ChevronDown,
   Plus,
   Search,
   X,
@@ -17,10 +15,6 @@ import {
   MoreHorizontal,
   FolderPlus,
   Trash2,
-  IndentIncrease,
-  IndentDecrease,
-  ArrowUp,
-  ArrowDown,
 } from "lucide-react";
 import { apiFetch } from "../supabase-client";
 import {
@@ -58,7 +52,7 @@ function genId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-// ── Migration from old block format ──────────────────────────────────
+// ���─ Migration from old block format ──────────────────────────────────
 
 function escapeHtml(s: string): string {
   return s
@@ -181,6 +175,7 @@ export function ListenScreen() {
   const [loaded, setLoaded] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMobile = useIsMobile();
+  const isTouch = useIsTouch();
 
   // ── Load data ──────────────────────────────────────────────────
   useEffect(() => {
@@ -465,7 +460,7 @@ export function ListenScreen() {
   // ── DnD sensors (for sidebar page reordering) ─────────────────
   const sensorOptions = useMemo(() => ({
     pointer: { activationConstraint: { distance: 5 } },
-    touch: { activationConstraint: { delay: 200, tolerance: 5 } },
+    touch: { activationConstraint: { delay: 300, tolerance: 5 } },
   }), []);
   const sensors = useSensors(
     useSensor(PointerSensor, sensorOptions.pointer),
@@ -535,6 +530,7 @@ export function ListenScreen() {
       sensors={sensors}
       onMovePage={movePage}
       onReparentPage={reparentPage}
+      isTouch={isTouch}
     />
   );
 
@@ -571,10 +567,10 @@ export function ListenScreen() {
         {/* Mobile header */}
         {isMobile && (
           <div className="flex-shrink-0 flex items-center justify-between px-4 pt-4 pb-2" style={{ background: "var(--zu-bg)" }}>
-            <h2 className="text-lg font-bold text-text-1">Listen</h2>
+            <h2 className="text-lg font-bold text-text-1">Notizen</h2>
             <button
               onClick={() => setSidebarOpen(true)}
-              className="p-1.5 rounded-lg hover:bg-surface-2"
+              className="-mr-1.5 p-1.5 rounded-lg hover:bg-surface-2"
             >
               <Menu className="w-5 h-5 text-text-2" />
             </button>
@@ -611,21 +607,8 @@ export function ListenScreen() {
         />
       )}
 
-      {/* Context menu popover — rendered at top level to avoid stacking context issues */}
-      {contextMenu && (() => {
-        const isTouchDevice = 'ontouchstart' in window;
-        const cmPage = pages.find((p) => p.id === contextMenu.pageId);
-        const cmSiblings = cmPage
-          ? pages.filter((p) => p.parent_id === cmPage.parent_id).sort((a, b) => a.position - b.position)
-          : [];
-        const cmIdx = cmSiblings.findIndex((p) => p.id === contextMenu.pageId);
-        const canMoveUp = cmIdx > 0;
-        const canMoveDown = cmIdx >= 0 && cmIdx < cmSiblings.length - 1;
-        // Can indent if there's a sibling above (becomes child of sibling above)
-        const canIndent = cmIdx > 0;
-        // Can outdent if the page has a parent
-        const canOutdent = cmPage ? cmPage.parent_id !== null : false;
-
+      {/* Context menu popover — desktop only */}
+      {!isTouch && contextMenu && (() => {
         return (
           <>
             <div className="fixed inset-0 z-[60]" onClick={() => setContextMenu(null)} />
@@ -661,79 +644,6 @@ export function ListenScreen() {
               >
                 <FolderPlus className="w-4 h-4 text-text-3" /> Unterseite erstellen
               </button>
-
-              {/* Mobile-only move options */}
-              {isTouchDevice && (
-                <>
-                  <div className="my-1" style={{ borderTop: "1px solid var(--zu-border)" }} />
-                  <button
-                    disabled={!canMoveUp}
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (canMoveUp && cmPage) {
-                        movePage(contextMenu.pageId, cmPage.parent_id, cmIdx - 1);
-                        setContextMenu(null);
-                      }
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-[10px] hover:bg-surface-2 cursor-pointer w-full text-sm text-text-1 transition whitespace-nowrap disabled:opacity-30 disabled:cursor-default"
-                  >
-                    <ArrowUp className="w-4 h-4 text-text-3" /> Nach oben
-                  </button>
-                  <button
-                    disabled={!canMoveDown}
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (canMoveDown && cmPage) {
-                        movePage(contextMenu.pageId, cmPage.parent_id, cmIdx + 1);
-                        setContextMenu(null);
-                      }
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-[10px] hover:bg-surface-2 cursor-pointer w-full text-sm text-text-1 transition whitespace-nowrap disabled:opacity-30 disabled:cursor-default"
-                  >
-                    <ArrowDown className="w-4 h-4 text-text-3" /> Nach unten
-                  </button>
-                  <button
-                    disabled={!canIndent}
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (canIndent && cmPage) {
-                        const siblingAbove = cmSiblings[cmIdx - 1];
-                        // Make child of sibling above, at the end
-                        const siblingChildren = pages.filter((p) => p.parent_id === siblingAbove.id);
-                        movePage(contextMenu.pageId, siblingAbove.id, siblingChildren.length);
-                        setExpandedPages((prev) => new Set(prev).add(siblingAbove.id));
-                        setContextMenu(null);
-                      }
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-[10px] hover:bg-surface-2 cursor-pointer w-full text-sm text-text-1 transition whitespace-nowrap disabled:opacity-30 disabled:cursor-default"
-                  >
-                    <IndentIncrease className="w-4 h-4 text-text-3" /> Einr{"\u00fc"}cken
-                  </button>
-                  <button
-                    disabled={!canOutdent}
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (canOutdent && cmPage && cmPage.parent_id) {
-                        const parent = pages.find((p) => p.id === cmPage.parent_id);
-                        const grandparentId = parent ? parent.parent_id : null;
-                        const gpSiblings = pages
-                          .filter((p) => p.parent_id === grandparentId)
-                          .sort((a, b) => a.position - b.position);
-                        const parentIdx = gpSiblings.findIndex((p) => p.id === cmPage.parent_id);
-                        movePage(contextMenu.pageId, grandparentId, parentIdx + 1);
-                        setContextMenu(null);
-                      }
-                    }}
-                    className="flex items-center gap-3 px-4 py-3 rounded-[10px] hover:bg-surface-2 cursor-pointer w-full text-sm text-text-1 transition whitespace-nowrap disabled:opacity-30 disabled:cursor-default"
-                  >
-                    <IndentDecrease className="w-4 h-4 text-text-3" /> Ausr{"\u00fc"}cken
-                  </button>
-                </>
-              )}
 
               <div className="my-1" style={{ borderTop: "1px solid var(--zu-border)" }} />
               <button
@@ -800,6 +710,11 @@ function useIsMobile() {
   return mobile;
 }
 
+function useIsTouch() {
+  const [touch] = useState(() => 'ontouchstart' in window || navigator.maxTouchPoints > 0);
+  return touch;
+}
+
 // ── Sidebar ──────────────────────────────────────────────────────────
 
 interface SidebarContentProps {
@@ -827,6 +742,7 @@ interface SidebarContentProps {
   sensors: ReturnType<typeof useSensors>;
   onMovePage: (pageId: string, newParentId: string | null, newPosition: number) => void;
   onReparentPage: (pageId: string, newParentId: string | null) => void;
+  isTouch: boolean;
 }
 
 type DropZone = "top" | "middle" | "bottom";
@@ -842,7 +758,7 @@ function SidebarContent(props: SidebarContentProps) {
     onSetSearchQuery, onSelectPage, onToggleExpand, onCreatePage,
     onContextMenu, onRename, onFinishRename, onOpenEmojiPicker,
     onCreateSubpage, onDeletePage, onSearchResultClick,
-    sensors, onMovePage,
+    sensors, onMovePage, isTouch,
   } = props;
 
   const rootPages = useMemo(
@@ -868,6 +784,8 @@ function SidebarContent(props: SidebarContentProps) {
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [dragActiveWidth, setDragActiveWidth] = useState<number>(0);
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
+  const [dragOverTrash, setDragOverTrash] = useState(false);
+  const trashZoneRef = useRef<HTMLDivElement>(null);
   const rowRefsMap = useRef<Map<string, HTMLElement>>(new Map());
 
   const registerRowRef = useCallback((id: string, el: HTMLElement | null) => {
@@ -925,12 +843,27 @@ function SidebarContent(props: SidebarContentProps) {
       // Calculate cursor Y position
       const activatorEvent = event.activatorEvent as MouseEvent | TouchEvent;
       let startY = 0;
+      let startX = 0;
       if ("touches" in activatorEvent) {
         startY = activatorEvent.touches[0].clientY;
+        startX = activatorEvent.touches[0].clientX;
       } else {
         startY = activatorEvent.clientY;
+        startX = activatorEvent.clientX;
       }
       const cursorY = startY + event.delta.y;
+      const cursorX = startX + event.delta.x;
+
+      // Check if over trash zone
+      if (trashZoneRef.current) {
+        const trashRect = trashZoneRef.current.getBoundingClientRect();
+        const overTrash = cursorX >= trashRect.left && cursorX <= trashRect.right && cursorY >= trashRect.top && cursorY <= trashRect.bottom;
+        setDragOverTrash(overTrash);
+        if (overTrash) {
+          setDropPreview(null);
+          return;
+        }
+      }
 
       // Find which row the cursor is over
       let found: DropPreview | null = null;
@@ -959,9 +892,37 @@ function SidebarContent(props: SidebarContentProps) {
     []
   );
 
+  const onDeletePageRef = useRef(onDeletePage);
+  onDeletePageRef.current = onDeletePage;
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const activeId = String(event.active.id);
+
+      // Check if dropped on trash zone
+      if (trashZoneRef.current) {
+        const trashRect = trashZoneRef.current.getBoundingClientRect();
+        const activatorEvent = event.activatorEvent as MouseEvent | TouchEvent;
+        let startY = 0, startX = 0;
+        if ("touches" in activatorEvent) {
+          startY = activatorEvent.touches[0].clientY;
+          startX = activatorEvent.touches[0].clientX;
+        } else {
+          startY = activatorEvent.clientY;
+          startX = activatorEvent.clientX;
+        }
+        const cursorX = startX + event.delta.x;
+        const cursorY = startY + event.delta.y;
+        if (cursorX >= trashRect.left && cursorX <= trashRect.right && cursorY >= trashRect.top && cursorY <= trashRect.bottom) {
+          onDeletePageRef.current(activeId);
+          setDragActiveId(null);
+          setDragActiveWidth(0);
+          setDropPreview(null);
+          setDragOverTrash(false);
+          return;
+        }
+      }
+
       const currentDropPreview = dropPreviewRef.current;
       if (currentDropPreview) {
         const targetPage = pagesRef.current.find((p) => p.id === currentDropPreview.targetId);
@@ -982,6 +943,7 @@ function SidebarContent(props: SidebarContentProps) {
       setDragActiveId(null);
       setDragActiveWidth(0);
       setDropPreview(null);
+      setDragOverTrash(false);
     },
     []
   );
@@ -990,6 +952,7 @@ function SidebarContent(props: SidebarContentProps) {
     setDragActiveId(null);
     setDragActiveWidth(0);
     setDropPreview(null);
+    setDragOverTrash(false);
   }, []);
 
   const dragActivePage = useMemo(
@@ -1016,6 +979,7 @@ function SidebarContent(props: SidebarContentProps) {
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
+            inputMode="text"
           />
           {searchQuery && (
             <button
@@ -1092,6 +1056,7 @@ function SidebarContent(props: SidebarContentProps) {
                   dropPreview={dropPreview}
                   registerRowRef={registerRowRef}
                   groupChevronMap={groupChevronMap}
+                  isTouch={isTouch}
                 />
               ))}
               <DragOverlay dropAnimation={null}>
@@ -1100,7 +1065,7 @@ function SidebarContent(props: SidebarContentProps) {
                     className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface border border-accent-mid text-sm text-text-2 opacity-90"
                     style={{ width: dragActiveWidth || "auto" }}
                   >
-                    <GripVertical className="w-3 h-3 text-text-3 flex-shrink-0" />
+                    {!isTouch && <GripVertical className="w-3 h-3 text-text-3 flex-shrink-0" />}
                     <span className="text-sm flex-shrink-0">{dragActivePage.icon}</span>
                     <span className="flex-1 min-w-0 truncate">{dragActivePage.title}</span>
                   </div>
@@ -1108,6 +1073,21 @@ function SidebarContent(props: SidebarContentProps) {
               </DragOverlay>
         </DndContext>
       </div>
+
+      {/* Trash zone — visible during drag on touch devices */}
+      {isTouch && dragActiveId && (
+        <div
+          ref={trashZoneRef}
+          className={`flex-shrink-0 mx-2 mb-2 flex items-center justify-center gap-2 rounded-xl border-2 border-dashed transition-colors py-3 ${
+            dragOverTrash
+              ? "border-danger bg-danger-light text-danger"
+              : "border-border text-text-3"
+          }`}
+        >
+          <Trash2 className="w-4 h-4" />
+          <span className="text-sm font-medium">Seite entfernen</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1134,6 +1114,7 @@ interface PageTreeItemProps {
   dropPreview: DropPreview | null;
   registerRowRef: (id: string, el: HTMLElement | null) => void;
   groupChevronMap: Record<string, boolean>;
+  isTouch: boolean;
 }
 
 // Fixed column widths (px)
@@ -1146,7 +1127,7 @@ function PageTreeItem(props: PageTreeItemProps) {
     page, pages, depth, activePageId, expandedPages, renamingPageId, contextMenu,
     onSelect, onToggleExpand, onContextMenu, onRename, onFinishRename,
     onOpenEmojiPicker, onCreateSubpage, onDeletePage,
-    dragActiveId, dropPreview, registerRowRef, groupChevronMap,
+    dragActiveId, dropPreview, registerRowRef, groupChevronMap, isTouch,
   } = props;
 
   // Does my sibling group need a chevron column?
@@ -1163,8 +1144,6 @@ function PageTreeItem(props: PageTreeItemProps) {
   const isRenaming = page.id === renamingPageId;
   const isDragging = page.id === dragActiveId;
   const renameRef = useRef<HTMLInputElement>(null);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const longPressMovedRef = useRef(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
   // Register/unregister row ref for drop zone detection
@@ -1187,34 +1166,6 @@ function PageTreeItem(props: PageTreeItemProps) {
     }
   }, [isRenaming]);
 
-  const handleLongPressStart = (e: React.TouchEvent | React.MouseEvent) => {
-    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
-    longPressMovedRef.current = false;
-    longPressTimerRef.current = setTimeout(() => {
-      // Only open popover if no movement was detected (i.e. not a drag)
-      if (!longPressMovedRef.current) {
-        onContextMenu(page.id, clientX, clientY);
-      }
-    }, 500);
-  };
-
-  const handleLongPressMove = () => {
-    // Movement detected → this is a drag, not a popover trigger
-    longPressMovedRef.current = true;
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  const handleLongPressEnd = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
   // Drop preview indicators
   const isDropTarget = dropPreview?.targetId === page.id;
   const showTopLine = isDropTarget && dropPreview?.zone === "top";
@@ -1232,7 +1183,10 @@ function PageTreeItem(props: PageTreeItemProps) {
       )}
 
       <div
-        ref={(el) => { rowRef.current = el; }}
+        ref={(el) => {
+          rowRef.current = el;
+          if (isTouch) setDragRef(el);
+        }}
         className={`group flex items-center py-1 pr-1 rounded-lg cursor-pointer transition text-sm ${
           showMiddleHighlight
             ? "bg-accent-light border border-accent-mid"
@@ -1240,27 +1194,26 @@ function PageTreeItem(props: PageTreeItemProps) {
               ? "bg-accent-light text-accent-dark"
               : "text-text-2 hover:bg-surface-2"
         } ${isDragging ? "opacity-30" : ""}`}
-        style={{ paddingLeft: indent }}
+        style={{ paddingLeft: indent, WebkitTouchCallout: isTouch ? "none" : undefined, userSelect: isTouch ? "none" : undefined }}
         onClick={() => !isRenaming && onSelect(page.id)}
         onContextMenu={(e) => {
           e.preventDefault();
-          onContextMenu(page.id, e.clientX, e.clientY);
+          if (!isTouch) onContextMenu(page.id, e.clientX, e.clientY);
         }}
-        onTouchStart={handleLongPressStart}
-        onTouchMove={handleLongPressMove}
-        onTouchEnd={handleLongPressEnd}
-        onTouchCancel={handleLongPressEnd}
+        {...(isTouch ? { ...attributes, ...listeners } : {})}
       >
-        {/* Drag handle — fixed 20px */}
-        <div
-          ref={setDragRef}
-          {...attributes}
-          {...listeners}
-          className="flex-shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity touch-none"
-          style={{ width: COL_DRAG }}
-        >
-          <GripVertical className="w-3.5 h-3.5 text-text-3" />
-        </div>
+        {/* Drag handle — desktop only, fixed 20px */}
+        {!isTouch && (
+          <div
+            ref={setDragRef}
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity touch-none"
+            style={{ width: COL_DRAG }}
+          >
+            <GripVertical className="w-3.5 h-3.5 text-text-3" />
+          </div>
+        )}
 
         {/* Chevron — 20px column, only rendered when sibling group needs it */}
         {groupNeedsChevron && (
@@ -1281,7 +1234,7 @@ function PageTreeItem(props: PageTreeItemProps) {
         )}
 
         {/* Emoji icon */}
-        <span className="text-sm flex-shrink-0 mr-1">{page.icon}</span>
+        <span className="text-sm flex-shrink-0 mr-1" style={{ marginLeft: isTouch ? 4 : 0 }}>{page.icon}</span>
 
         {/* Title */}
         {isRenaming ? (
@@ -1309,16 +1262,18 @@ function PageTreeItem(props: PageTreeItemProps) {
           <span className="flex-1 min-w-0 truncate">{page.title}</span>
         )}
 
-        {/* Context menu button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onContextMenu(page.id, e.clientX, e.clientY);
-          }}
-          className="w-5 h-5 flex items-center justify-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-surface-2"
-        >
-          <MoreHorizontal className="w-3.5 h-3.5 text-text-3" />
-        </button>
+        {/* Context menu button — desktop only */}
+        {!isTouch && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onContextMenu(page.id, e.clientX, e.clientY);
+            }}
+            className="w-5 h-5 flex items-center justify-center flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity rounded hover:bg-surface-2"
+          >
+            <MoreHorizontal className="w-3.5 h-3.5 text-text-3" />
+          </button>
+        )}
       </div>
 
       {/* Bottom drop indicator line */}
@@ -1349,6 +1304,7 @@ function PageTreeItem(props: PageTreeItemProps) {
           dropPreview={dropPreview}
           registerRowRef={registerRowRef}
           groupChevronMap={groupChevronMap}
+          isTouch={isTouch}
         />
       ))}
     </div>
@@ -1410,41 +1366,68 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   const dragSrcRef = useRef<HTMLElement | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
 
-  // Mobile indent toolbar state
+  // Floating selection toolbar state
   const [cursorInLi, setCursorInLi] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [selToolbar, setSelToolbar] = useState<{ top: number; left: number; below: boolean } | null>(null);
+  const selToolbarRef = useRef<HTMLDivElement>(null);
 
-  // Track visualViewport for keyboard height
+  // Track whether cursor is inside an <li> + floating selection toolbar
   useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const update = () => {
-      const kbH = window.innerHeight - vv.height - vv.offsetTop;
-      setKeyboardHeight(Math.max(0, kbH));
-    };
-    update();
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
-    return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
-    };
-  }, []);
+    const TOOLBAR_H = 44;
+    const TOOLBAR_MARGIN = 8;
 
-  // Track whether cursor is inside an <li>
-  useEffect(() => {
-    const checkCursorInLi = () => {
+    const onSelectionChange = () => {
       const sel = window.getSelection();
-      if (!sel?.rangeCount || !editorRef.current) { setCursorInLi(false); return; }
+      if (!sel?.rangeCount || !editorRef.current) {
+        setCursorInLi(false);
+        setSelToolbar(null);
+        return;
+      }
+
+      // Check selection is inside our editor
+      if (!editorRef.current.contains(sel.getRangeAt(0).startContainer)) {
+        setCursorInLi(false);
+        setSelToolbar(null);
+        return;
+      }
+
+      // Walk up from selection to find <li>
       let node: Node | null = sel.getRangeAt(0).startContainer;
+      let foundLi = false;
       while (node && node !== editorRef.current) {
-        if (node instanceof HTMLElement && node.tagName === "LI") { setCursorInLi(true); return; }
+        if (node instanceof HTMLElement && node.tagName === "LI") { foundLi = true; break; }
         node = node.parentNode;
       }
-      setCursorInLi(false);
+      setCursorInLi(foundLi);
+
+      // Floating toolbar: only for non-collapsed selection inside <li>
+      if (!foundLi || sel.isCollapsed || !sel.toString().trim()) {
+        setSelToolbar(null);
+        return;
+      }
+
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) { setSelToolbar(null); return; }
+
+      const scrollParent = editorRef.current.closest(".overflow-y-auto");
+      const scrollY = scrollParent ? scrollParent.scrollTop : 0;
+      const parentRect = scrollParent ? scrollParent.getBoundingClientRect() : { top: 0, left: 0 };
+
+      let top = rect.top - parentRect.top + scrollY - TOOLBAR_H - TOOLBAR_MARGIN;
+      let below = false;
+      // If toolbar would be above viewport within the scroll container
+      if (rect.top - TOOLBAR_H - TOOLBAR_MARGIN < parentRect.top) {
+        top = rect.bottom - parentRect.top + scrollY + TOOLBAR_MARGIN;
+        below = true;
+      }
+      const left = rect.left + rect.width / 2 - parentRect.left;
+
+      setSelToolbar({ top, left, below });
     };
-    document.addEventListener("selectionchange", checkCursorInLi);
-    return () => document.removeEventListener("selectionchange", checkCursorInLi);
+
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => document.removeEventListener("selectionchange", onSelectionChange);
   }, []);
 
   // Slash-command state
@@ -1531,10 +1514,11 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     sel?.addRange(r);
   }, []);
 
-  // ── Indent/Outdent helpers for the mobile toolbar ──
-  const handleMobileIndent = useCallback(() => {
+  // ── Floating toolbar indent/outdent (preserves selection) ──
+  const handleFloatingIndent = useCallback(() => {
     const sel = window.getSelection();
     if (!sel?.rangeCount || !editorRef.current) return;
+    const savedRange = sel.getRangeAt(0).cloneRange();
     const li = findClosestTag(sel.getRangeAt(0).startContainer, "LI");
     if (!li) return;
     const parentList = li.parentElement;
@@ -1545,13 +1529,15 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     let subList = prevLi.querySelector(`:scope > ${listTag}`) as HTMLElement | null;
     if (!subList) { subList = document.createElement(listTag); prevLi.appendChild(subList); }
     subList.appendChild(li);
-    placeCursorAtStart(li);
+    // Restore selection
+    try { sel.removeAllRanges(); sel.addRange(savedRange); } catch { placeCursorAtStart(li); }
     syncContent();
   }, [findClosestTag, placeCursorAtStart, syncContent]);
 
-  const handleMobileOutdent = useCallback(() => {
+  const handleFloatingOutdent = useCallback(() => {
     const sel = window.getSelection();
     if (!sel?.rangeCount || !editorRef.current) return;
+    const savedRange = sel.getRangeAt(0).cloneRange();
     const li = findClosestTag(sel.getRangeAt(0).startContainer, "LI");
     if (!li) return;
     const parentList = li.parentElement;
@@ -1570,7 +1556,8 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
       li.appendChild(subList);
     }
     if (parentList.children.length === 0) parentList.remove();
-    placeCursorAtStart(li);
+    // Restore selection
+    try { sel.removeAllRanges(); sel.addRange(savedRange); } catch { placeCursorAtStart(li); }
     syncContent();
   }, [findClosestTag, placeCursorAtStart, syncContent]);
 
@@ -1938,15 +1925,21 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
       closeSlashMenu();
     }
 
-    // ── Mobile fallback: detect "- " via input event for bullet list ──
+    // ── Markdown shortcuts via input event (reliable on mobile where keydown is unreliable) ──
     if (sel?.isCollapsed && sel.rangeCount) {
       const range = sel.getRangeAt(0);
+      const node = sel.anchorNode;
       const blockEl = getBlockElement(range.startContainer);
-      if (blockEl && (blockEl.tagName === "P" || blockEl.tagName === "DIV") && !blockEl.classList.contains("editor-todo")) {
-        const text = blockEl.textContent || "";
-        if (text === "- " || text === "\u2013 " || text === "\u2014 ") {
+      if (node && blockEl && (blockEl.tagName === "P" || blockEl.tagName === "DIV") && !blockEl.classList.contains("editor-todo")) {
+        const text = node.textContent || "";
+        const lineText = text.substring(0, sel.anchorOffset);
+
+        // "- " → bullet list
+        if (lineText === "- " || lineText === "\u2013 " || lineText === "\u2014 ") {
+          // Preserve any text after the trigger
+          const rest = text.substring(sel.anchorOffset);
           const li = document.createElement("li");
-          li.innerHTML = "<br>";
+          li.innerHTML = rest || "<br>";
           const ul = document.createElement("ul");
           ul.appendChild(li);
           blockEl.replaceWith(ul);
@@ -1955,9 +1948,10 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           return;
         }
         // "1. " → numbered list
-        if (/^\d+\.\s$/.test(text)) {
+        if (/^\d+\.\s$/.test(lineText)) {
+          const rest = text.substring(sel.anchorOffset);
           const li = document.createElement("li");
-          li.innerHTML = "<br>";
+          li.innerHTML = rest || "<br>";
           const ol = document.createElement("ol");
           ol.appendChild(li);
           blockEl.replaceWith(ol);
@@ -1966,7 +1960,8 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           return;
         }
         // "[] " → to-do
-        if (text === "[] ") {
+        if (lineText === "[] ") {
+          const rest = text.substring(sel.anchorOffset);
           const todoDiv = document.createElement("div");
           todoDiv.className = "editor-todo";
           todoDiv.setAttribute("data-checked", "false");
@@ -1976,7 +1971,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           todoDiv.appendChild(checkbox);
           const textSpan = document.createElement("span");
           textSpan.className = "editor-todo-text";
-          textSpan.innerHTML = "<br>";
+          textSpan.innerHTML = rest || "<br>";
           todoDiv.appendChild(textSpan);
           blockEl.replaceWith(todoDiv);
           placeCursorAtStart(textSpan);
@@ -1984,14 +1979,17 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           return;
         }
         // "# " → H1, "## " → H2, "### " → H3
-        if (text === "# ") {
-          const h = document.createElement("h1"); h.innerHTML = "<br>"; blockEl.replaceWith(h); placeCursorAtStart(h); syncContent(); return;
+        if (lineText === "# ") {
+          const rest = text.substring(sel.anchorOffset);
+          const h = document.createElement("h1"); h.innerHTML = rest || "<br>"; blockEl.replaceWith(h); placeCursorAtStart(h); syncContent(); return;
         }
-        if (text === "## ") {
-          const h = document.createElement("h2"); h.innerHTML = "<br>"; blockEl.replaceWith(h); placeCursorAtStart(h); syncContent(); return;
+        if (lineText === "## ") {
+          const rest = text.substring(sel.anchorOffset);
+          const h = document.createElement("h2"); h.innerHTML = rest || "<br>"; blockEl.replaceWith(h); placeCursorAtStart(h); syncContent(); return;
         }
-        if (text === "### ") {
-          const h = document.createElement("h3"); h.innerHTML = "<br>"; blockEl.replaceWith(h); placeCursorAtStart(h); syncContent(); return;
+        if (lineText === "### ") {
+          const rest = text.substring(sel.anchorOffset);
+          const h = document.createElement("h3"); h.innerHTML = rest || "<br>"; blockEl.replaceWith(h); placeCursorAtStart(h); syncContent(); return;
         }
       }
     }
@@ -2742,7 +2740,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   }, [focusTitle, onClearFocusTitle]);
 
   return (
-    <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
+    <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-hide relative">
       <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 pb-40 md:max-w-none md:mx-0 md:pl-4 md:pr-4">
         {/* Page icon */}
         <button
@@ -2978,28 +2976,75 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
         </div>
       </div>
 
-      {/* Mobile indent/outdent toolbar above keyboard */}
-      {cursorInLi && keyboardHeight > 0 && (
+      {/* Floating selection toolbar for indent/outdent */}
+      {selToolbar && (
         <div
-          className="fixed left-0 right-0 z-50 flex items-center justify-center gap-1 bg-surface-2 border-t border-border px-3 py-1.5"
-          style={{ bottom: keyboardHeight }}
+          ref={selToolbarRef}
+          style={{
+            position: "absolute",
+            top: selToolbar.top,
+            left: selToolbar.left,
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            background: "var(--text-1)",
+            color: "var(--zu-bg)",
+            borderRadius: 8,
+            padding: "6px 4px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+            display: "flex",
+            gap: 0,
+            alignItems: "center",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            touchAction: "none",
+          }}
+          onContextMenu={(e) => e.preventDefault()}
         >
           <button
-            onPointerDown={(e) => { e.preventDefault(); handleMobileOutdent(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-border text-sm text-text-2 active:bg-accent-light active:border-accent-mid transition shadow-sm"
+            onTouchStart={(e) => { e.preventDefault(); handleFloatingOutdent(); }}
+            onMouseDown={(e) => { e.preventDefault(); handleFloatingOutdent(); }}
+            style={{
+              padding: "6px 12px",
+              fontSize: 13,
+              fontWeight: 600,
+              borderRadius: 6,
+              background: "transparent",
+              color: "inherit",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              whiteSpace: "nowrap",
+            }}
           >
-            <IndentDecrease className="w-4 h-4" />
-            <span className="text-xs">{"\u2190"} Ausr{"\u00fc"}cken</span>
+            {"\u21E4"} Ausrücken
           </button>
+          <div style={{ width: 1, height: 20, background: "var(--text-3)", flexShrink: 0 }} />
           <button
-            onPointerDown={(e) => { e.preventDefault(); handleMobileIndent(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-border text-sm text-text-2 active:bg-accent-light active:border-accent-mid transition shadow-sm"
+            onTouchStart={(e) => { e.preventDefault(); handleFloatingIndent(); }}
+            onMouseDown={(e) => { e.preventDefault(); handleFloatingIndent(); }}
+            style={{
+              padding: "6px 12px",
+              fontSize: 13,
+              fontWeight: 600,
+              borderRadius: 6,
+              background: "transparent",
+              color: "inherit",
+              border: "none",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              whiteSpace: "nowrap",
+            }}
           >
-            <IndentIncrease className="w-4 h-4" />
-            <span className="text-xs">Einr{"\u00fc"}cken {"\u2192"}</span>
+            Einrücken {"\u21E5"}
           </button>
         </div>
       )}
+
+
     </div>
   );
 }

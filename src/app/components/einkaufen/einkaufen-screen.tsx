@@ -1374,6 +1374,7 @@ function CategorySortModal({
                 data-lpignore="true"
                 data-1p-ignore="true"
                 data-form-type="other"
+                inputMode="text"
                 value={newCat}
                 onChange={(e) => {
                   setNewCat(e.target.value);

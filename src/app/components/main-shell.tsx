@@ -19,7 +19,7 @@ interface Tab {
 const tabs: Tab[] = [
   { id: "kalender", label: "Kalender", icon: Calendar },
   { id: "einkaufen", label: "Einkaufen", icon: ShoppingCart },
-  { id: "listen", label: "Listen", icon: FileText },
+  { id: "listen", label: "Notizen", icon: FileText },
   { id: "kochen", label: "Kochen", icon: ChefHat },
   { id: "mehr", label: "Menü", icon: Menu },
 ];
@@ -93,6 +93,19 @@ export function MainShell() {
   const [einkaufenCount, setEinkaufenCount] = useState(0);
   const stableHeight = useStableViewportHeight();
 
+  // Track which tabs have been visited — only mount their component once visited
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(new Set(["einkaufen"]));
+
+  const handleTabChange = (tab: TabId) => {
+    setActiveTab(tab);
+    setVisitedTabs((prev) => {
+      if (prev.has(tab)) return prev;
+      const next = new Set(prev);
+      next.add(tab);
+      return next;
+    });
+  };
+
   return (
     <div
       className="flex flex-col overflow-hidden font-sans"
@@ -100,23 +113,33 @@ export function MainShell() {
     >
       <Toaster position="top-center" richColors />
 
-      {/* Content — all tabs stay mounted, hidden via CSS to preserve state */}
+      {/* Content — tabs are lazy-mounted on first visit, then kept alive via CSS hidden */}
       <div className="flex-1 min-h-0 flex flex-col relative">
-        <div className={`absolute inset-0 flex flex-col ${activeTab === "kalender" ? "" : "hidden"}`}>
-          <KalenderScreen />
-        </div>
-        <div className={`absolute inset-0 flex flex-col ${activeTab === "einkaufen" ? "" : "hidden"}`}>
-          <EinkaufenScreen onItemCountChange={setEinkaufenCount} />
-        </div>
-        <div className={`absolute inset-0 flex flex-col ${activeTab === "listen" ? "" : "hidden"}`}>
-          <ListenScreen />
-        </div>
-        <div className={`absolute inset-0 flex flex-col ${activeTab === "kochen" ? "" : "hidden"}`}>
-          <KochenScreen />
-        </div>
-        <div className={`absolute inset-0 flex flex-col ${activeTab === "mehr" ? "" : "hidden"}`}>
-          <MehrScreen onSignOut={signOut} />
-        </div>
+        {visitedTabs.has("kalender") && (
+          <div className={`absolute inset-0 flex flex-col ${activeTab === "kalender" ? "" : "hidden"}`}>
+            <KalenderScreen />
+          </div>
+        )}
+        {visitedTabs.has("einkaufen") && (
+          <div className={`absolute inset-0 flex flex-col ${activeTab === "einkaufen" ? "" : "hidden"}`}>
+            <EinkaufenScreen onItemCountChange={setEinkaufenCount} />
+          </div>
+        )}
+        {visitedTabs.has("listen") && (
+          <div className={`absolute inset-0 flex flex-col ${activeTab === "listen" ? "" : "hidden"}`}>
+            <ListenScreen />
+          </div>
+        )}
+        {visitedTabs.has("kochen") && (
+          <div className={`absolute inset-0 flex flex-col ${activeTab === "kochen" ? "" : "hidden"}`}>
+            <KochenScreen />
+          </div>
+        )}
+        {visitedTabs.has("mehr") && (
+          <div className={`absolute inset-0 flex flex-col ${activeTab === "mehr" ? "" : "hidden"}`}>
+            <MehrScreen onSignOut={signOut} />
+          </div>
+        )}
       </div>
 
       {/* Bottom Navigation */}
@@ -128,7 +151,7 @@ export function MainShell() {
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className="relative flex items-center justify-center w-12 h-12 transition"
                 style={{
                   color: isActive ? "var(--color-accent)" : "var(--color-text-2)",

@@ -1827,6 +1827,7 @@ function EventEditorSheet({
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
+              inputMode="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Titel hinzufügen"

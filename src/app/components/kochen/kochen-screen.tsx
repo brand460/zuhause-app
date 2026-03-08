@@ -1037,6 +1037,7 @@ export function KochenScreen() {
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
+              inputMode="text"
               placeholder="https://..."
               value={urlInput}
               onChange={(e) => setUrlInput(e.target.value)}

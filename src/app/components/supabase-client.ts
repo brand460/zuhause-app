@@ -26,8 +26,8 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   const token = publicAnonKey;
 
   const url = `${API_BASE}${path}`;
-  const MAX_RETRIES = 4;
-  const RETRY_DELAY = 1000;
+  const MAX_RETRIES = 5;
+  const RETRY_DELAY = 1500;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let res: Response;
