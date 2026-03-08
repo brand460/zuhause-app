@@ -1,0 +1,454 @@
+@custom-variant dark (&:is([data-theme="dark"] *));
+
+:root {
+  /* ── Zuhause Design System ───────────────────────────────────── */
+  --font: 'DM Sans', sans-serif;
+  --font-size: 16px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+
+  /* Accent (green) */
+  --accent: #6FBD85;
+  --accent-dark: #4A9B65;
+  --accent-light: #EBF7EF;
+  --accent-mid: #B8DFC3;
+
+  /* Surfaces */
+  --zu-bg: #F7F7F5;
+  --surface: #FFFFFF;
+  --surface-2: #F0F0ED;
+
+  /* Text */
+  --text-1: #1A1A18;
+  --text-2: #4A4A45;
+  --text-3: #9A9A93;
+
+  /* Border */
+  --zu-border: #E8E8E3;
+
+  /* Today circle */
+  --today-circle: var(--text-1);
+
+  /* Danger */
+  --danger: #DC2626;
+  --danger-light: #FEF2F2;
+
+  /* Shadows */
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.06);
+  --shadow-elevated: 0 4px 24px rgba(0,0,0,0.08);
+
+  /* Radii */
+  --radius-card: 16px;
+  --radius-btn: 24px;
+  --radius-input: 50px;
+  --radius: 0.625rem;
+
+  /* ── Tailwind compatibility mappings ── */
+  --background: var(--zu-bg);
+  --foreground: var(--text-1);
+  --card: var(--surface);
+  --card-foreground: var(--text-1);
+  --popover: var(--surface);
+  --popover-foreground: var(--text-1);
+  --primary: var(--accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text-1);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-3);
+  --destructive: var(--danger);
+  --destructive-foreground: #ffffff;
+  --border: var(--zu-border);
+  --input: transparent;
+  --input-background: var(--surface-2);
+  --switch-background: #D1D5DB;
+  --ring: var(--accent-mid);
+
+  /* Charts */
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+
+  /* Sidebar */
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--text-1);
+  --sidebar-primary: var(--text-1);
+  --sidebar-primary-foreground: var(--surface);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--text-2);
+  --sidebar-border: var(--zu-border);
+  --sidebar-ring: var(--accent-mid);
+}
+
+[data-theme="dark"] {
+  --accent: #4A9B6F;
+  --accent-dark: #3A7D58;
+  --accent-light: #162519;
+  --accent-mid: #2E4D38;
+  --zu-bg: #141412;
+  --surface: #1E1E1B;
+  --surface-2: #282825;
+  --zu-border: #2E2E2A;
+  --text-1: #F0F0EC;
+  --text-2: #A8A8A0;
+  --text-3: #5A5A55;
+  --danger: #EF4444;
+  --danger-light: #2D1515;
+  --shadow-card: 0 1px 4px rgba(0,0,0,0.2);
+  --shadow-elevated: 0 4px 24px rgba(0,0,0,0.35);
+  --switch-background: #4A4A45;
+  --today-circle: #4A4A4A;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+
+  /* ── New design system colors ── */
+  --color-accent: var(--accent);
+  --color-accent-dark: var(--accent-dark);
+  --color-accent-light: var(--accent-light);
+  --color-accent-mid: var(--accent-mid);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-danger: var(--danger);
+  --color-danger-light: var(--danger-light);
+
+  /* Charts */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Radii */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Sidebar */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /**
+  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
+  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
+  */
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  h1 {
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  h2 {
+    font-size: var(--text-xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  h3 {
+    font-size: var(--text-lg);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  h4 {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  label {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  button {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  input {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
+  }
+}
+
+/* ── Editor (single contentEditable) ────────────────────────────── */
+
+.editor-content {
+  font-size: 0.875rem;
+  line-height: 1.625;
+  color: var(--text-1);
+  caret-color: var(--accent);
+}
+
+.editor-content:empty::before {
+  content: 'Schreiben...';
+  color: #d1d5db;
+  pointer-events: none;
+}
+
+.editor-content p {
+  min-height: 1.625em;
+  margin: 0;
+  padding: 1px 0;
+}
+
+.editor-content h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.4;
+  margin: 0.5em 0 0.15em;
+  color: var(--text-1);
+}
+
+.editor-content h2 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.4em 0 0.1em;
+  color: var(--text-1);
+}
+
+.editor-content h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.3em 0 0.1em;
+  color: var(--text-1);
+}
+
+.editor-content ul {
+  list-style: none;
+  padding-left: 0;
+  margin: 2px 0;
+}
+
+.editor-content ol {
+  list-style: none;
+  padding-left: 0;
+  margin: 2px 0;
+  counter-reset: editor-ol;
+}
+
+.editor-content li {
+  position: relative;
+  min-height: 1.625em;
+  padding: 1px 0;
+  padding-left: 28px;
+  color: var(--text-1);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* Custom bullet marker for ul > li */
+.editor-content ul > li::before {
+  content: '•';
+  position: absolute;
+  left: 16px;
+  color: var(--text-2);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* Custom number marker for ol > li */
+.editor-content ol > li {
+  counter-increment: editor-ol;
+}
+.editor-content ol > li::before {
+  content: counter(editor-ol) '.';
+  position: absolute;
+  left: 14px;
+  color: var(--text-2);
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.editor-content hr {
+  border: none;
+  border-top: 1px solid var(--zu-border);
+  margin: 12px 0;
+}
+
+.editor-content a {
+  color: #3b82f6;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.editor-content a:hover {
+  color: #2563eb;
+}
+
+/* To-do blocks */
+.editor-content .editor-todo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 1.625em;
+  padding: 1px 0;
+  padding-left: 28px;
+}
+
+.editor-content .editor-todo-check {
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  border: 2px solid #d1d5db;
+  font-size: 0;
+  transition: all 0.15s;
+}
+
+.editor-content .editor-todo-check:hover {
+  border-color: var(--accent);
+}
+
+.editor-content .editor-todo[data-checked="true"] .editor-todo-check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.editor-content .editor-todo[data-checked="true"] .editor-todo-check::after {
+  content: '';
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid white;
+  border-bottom: 2px solid white;
+  transform: rotate(-45deg);
+  margin-top: -1px;
+}
+
+.editor-content .editor-todo[data-checked="true"] > .editor-todo-text {
+  text-decoration: line-through;
+  color: #9ca3af;
+}
+
+/* Todo indentation levels */
+.editor-content .editor-todo[data-indent="1"] { margin-left: 28px; }
+.editor-content .editor-todo[data-indent="2"] { margin-left: 56px; }
+.editor-content .editor-todo[data-indent="3"] { margin-left: 84px; }
+.editor-content .editor-todo[data-indent="4"] { margin-left: 112px; }
+
+/* Li drag handle */
+.li-drag-handle {
+  position: absolute;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+  z-index: 5;
+  opacity: 0.6;
+}
+.li-drag-handle:active {
+  cursor: grabbing;
+  opacity: 1;
+}
+
+/* Flash animation when indent level changes */
+@keyframes li-indent-flash {
+  0% { background-color: var(--accent-light); }
+  100% { background-color: transparent; }
+}
+.li-indent-flash {
+  animation: li-indent-flash 200ms ease-out;
+}
+
+/* Nested lists — indentation comes from parent li padding-left */
+.editor-content ul ul,
+.editor-content ol ol,
+.editor-content ul ol,
+.editor-content ol ul {
+  margin: 0;
+  padding-left: 0;
+}
+
+/* Editor tables */
+.editor-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 16px 0 8px;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.editor-content table td,
+.editor-content table th {
+  border: 1px solid var(--zu-border);
+  padding: 8px;
+  min-width: 60px;
+  vertical-align: top;
+  color: var(--text-1);
+}
+
+.editor-content table tr:first-child td,
+.editor-content table tr:first-child th {
+  background-color: var(--surface-2);
+  font-weight: 500;
+}
+
+.editor-content table td:focus,
+.editor-content table th:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}

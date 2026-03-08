@@ -1,0 +1,50 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+
+/* Global font */
+* {
+  font-family: var(--font);
+}
+
+/* Global: Text-Selektion deaktivieren (Mobile UX) */
+* {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Ausnahmen: Editierbare Elemente bleiben selektierbar */
+input, textarea, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+  caret-color: var(--accent);
+}
+
+/* Focus-Ring komplett entfernen */
+*, *:focus, *:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+input:focus, textarea:focus, [contenteditable]:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* PWA: Pull-to-Refresh deaktivieren & App-Shell fixieren */
+html, body {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  height: 100%;
+  background: var(--zu-bg);
+  color: var(--text-1);
+}
+
+#root {
+  height: 100%;
+  overflow: hidden;
+  /* position: fixed is handled by MainShell with stable JS-based height
+     to prevent keyboard-induced layout shifts */
+}
