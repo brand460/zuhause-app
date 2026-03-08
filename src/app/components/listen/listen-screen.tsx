@@ -21,7 +21,6 @@ import { useKvRealtime, markLocalWrite } from "../use-kv-realtime";
 import {
   DndContext,
   PointerSensor,
-  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -37,6 +36,7 @@ import data from "@emoji-mart/data";
 // ── Types ────────────────────────────────────────────────────────────
 
 const HOUSEHOLD_ID = "dev-household";
+const LS_LAST_PAGE_KEY = `last_open_page_${HOUSEHOLD_ID}`;
 
 interface Page {
   id: string;
@@ -226,7 +226,9 @@ export function ListenScreen() {
       if (loadedPages.length === 0 && isInitial) {
         setPages(DEFAULT_PAGES);
         setPageContents(DEFAULT_CONTENTS);
-        setActivePageId("p1");
+        const savedId = localStorage.getItem(LS_LAST_PAGE_KEY);
+        const initialId = (savedId && DEFAULT_PAGES.some(p => p.id === savedId)) ? savedId : "p1";
+        setActivePageId(initialId);
         saveData(DEFAULT_PAGES, DEFAULT_CONTENTS);
       } else if (loadedPages.length > 0) {
         let contents: PageContents;
@@ -239,7 +241,25 @@ export function ListenScreen() {
         }
         setPages(loadedPages);
         setPageContents(contents);
-        if (isInitial) setActivePageId(loadedPages[0]?.id || null);
+        if (isInitial) {
+          const savedId = localStorage.getItem(LS_LAST_PAGE_KEY);
+          const restoredId = (savedId && loadedPages.some(p => p.id === savedId)) ? savedId : loadedPages[0]?.id || null;
+          setActivePageId(restoredId);
+          // Expand ancestors so restored page is visible in sidebar
+          if (restoredId) {
+            const ancestors = new Set<string>();
+            let cur = loadedPages.find(p => p.id === restoredId);
+            while (cur?.parent_id) {
+              ancestors.add(cur.parent_id);
+              cur = loadedPages.find(p => p.id === cur!.parent_id);
+            }
+            if (ancestors.size > 0) setExpandedPages(prev => {
+              const next = new Set(prev);
+              ancestors.forEach(id => next.add(id));
+              return next;
+            });
+          }
+        }
       }
       if (isInitial) setLoaded(true);
     } catch (err) {
@@ -247,7 +267,9 @@ export function ListenScreen() {
       if (isInitial) {
         setPages(DEFAULT_PAGES);
         setPageContents(DEFAULT_CONTENTS);
-        setActivePageId("p1");
+        const savedId = localStorage.getItem(LS_LAST_PAGE_KEY);
+        const initialId = (savedId && DEFAULT_PAGES.some(p => p.id === savedId)) ? savedId : "p1";
+        setActivePageId(initialId);
         setLoaded(true);
       }
     }
@@ -256,6 +278,13 @@ export function ListenScreen() {
   useEffect(() => {
     loadListenData(true);
   }, []);
+
+  // ── Persist last opened page to localStorage ──
+  useEffect(() => {
+    if (activePageId && loaded) {
+      localStorage.setItem(LS_LAST_PAGE_KEY, activePageId);
+    }
+  }, [activePageId, loaded]);
 
   // ── Supabase Realtime subscription for live sync ──
   useKvRealtime(
@@ -473,13 +502,9 @@ export function ListenScreen() {
     return results.slice(0, 20);
   }, [searchQuery, pages, pageContents]);
 
-  // ── DnD sensors (for sidebar page reordering) ─────────────────
-  // On touch: disable PointerSensor (it fires pointercancel without touch-action:none on the row,
-  // which would kill scrolling). TouchSensor uses native touch events and can preventDefault()
-  // after activation, so it works without touch-action:none.
+  // ── DnD sensors (desktop only — touch uses custom long-press drag) ──
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: isTouch ? 999999 : 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 500, tolerance: 10 } })
   );
 
   // ── Render ─────────────────────────────────────────────────────
@@ -795,7 +820,7 @@ function SidebarContent(props: SidebarContentProps) {
 
   const dndModifiers = useMemo(() => [restrictToVerticalAxis], []);
 
-  // ── Intelligent DnD state ──
+  // ── Shared DnD state (desktop dnd-kit + touch custom) ──
   const [dragActiveId, setDragActiveId] = useState<string | null>(null);
   const [dragActiveWidth, setDragActiveWidth] = useState<number>(0);
   const [dropPreview, setDropPreview] = useState<DropPreview | null>(null);
@@ -810,6 +835,25 @@ function SidebarContent(props: SidebarContentProps) {
       rowRefsMap.current.delete(id);
     }
   }, []);
+
+  // ── Touch long-press drag state ──
+  const touchDragEndTimeRef = useRef(0);
+  const touchDragRef = useRef<{
+    pageId: string;
+    startX: number;
+    startY: number;
+    timerId: ReturnType<typeof setTimeout> | null;
+    activated: boolean;
+    ghostX: number;
+    ghostY: number;
+    ghostWidth: number;
+    ghostLabel: string;
+    ghostIcon: string;
+  } | null>(null);
+  const [touchDragGhost, setTouchDragGhost] = useState<{
+    x: number; y: number; width: number; label: string; icon: string;
+  } | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Flat list of all visible page IDs (tree order)
   const flatVisibleIds = useMemo(() => {
@@ -838,6 +882,178 @@ function SidebarContent(props: SidebarContentProps) {
   pagesRef.current = pages;
   const onMovePageRef = useRef(onMovePage);
   onMovePageRef.current = onMovePage;
+
+  // ── Touch long-press drag handlers ──
+
+  const computeTouchDropPreview = useCallback((cursorY: number, cursorX: number, dragPageId: string): { preview: DropPreview | null; overTrash: boolean } => {
+    // Check trash zone
+    if (trashZoneRef.current) {
+      const trashRect = trashZoneRef.current.getBoundingClientRect();
+      if (cursorX >= trashRect.left && cursorX <= trashRect.right && cursorY >= trashRect.top && cursorY <= trashRect.bottom) {
+        return { preview: null, overTrash: true };
+      }
+    }
+    // Find drop target
+    for (const pageId of flatVisibleIdsRef.current) {
+      if (pageId === dragPageId) continue;
+      const el = rowRefsMap.current.get(pageId);
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (cursorY >= rect.top && cursorY <= rect.bottom) {
+        const relY = cursorY - rect.top;
+        const third = rect.height / 3;
+        let zone: DropZone;
+        if (relY < third) zone = "top";
+        else if (relY > third * 2) zone = "bottom";
+        else zone = "middle";
+        return { preview: { targetId: pageId, zone }, overTrash: false };
+      }
+    }
+    return { preview: null, overTrash: false };
+  }, []);
+
+  const executeTouchDrop = useCallback((dragPageId: string, preview: DropPreview | null, overTrash: boolean) => {
+    if (overTrash) {
+      onDeletePageRef.current(dragPageId);
+    } else if (preview) {
+      const targetPage = pagesRef.current.find(p => p.id === preview.targetId);
+      if (targetPage) {
+        if (preview.zone === "middle") {
+          onMovePageRef.current(dragPageId, preview.targetId, 0);
+        } else {
+          const parentId = targetPage.parent_id;
+          const siblings = pagesRef.current
+            .filter(p => p.parent_id === parentId && p.id !== dragPageId)
+            .sort((a, b) => a.position - b.position);
+          const targetIdx = siblings.findIndex(p => p.id === preview.targetId);
+          const newPosition = preview.zone === "top" ? targetIdx : targetIdx + 1;
+          onMovePageRef.current(dragPageId, parentId, Math.max(0, newPosition));
+        }
+      }
+    }
+  }, []);
+
+  const handleRowTouchStart = useCallback((e: React.TouchEvent, pageId: string) => {
+    // Edge guard: ignore touches near left edge (Android back gesture zone)
+    const touch = e.touches[0];
+    if (touch.clientX < 20) return;
+    // Don't start drag if renaming
+    if (props.renamingPageId === pageId) return;
+
+    const page = pagesRef.current.find(p => p.id === pageId);
+    if (!page) return;
+
+    const rowEl = rowRefsMap.current.get(pageId);
+    const width = rowEl?.getBoundingClientRect().width || 200;
+
+    const startX = touch.clientX;
+    const startY = touch.clientY;
+
+    const timerId = setTimeout(() => {
+      if (!touchDragRef.current || touchDragRef.current.pageId !== pageId) return;
+      // Activate drag
+      touchDragRef.current.activated = true;
+      try { navigator.vibrate?.(30); } catch (_) {}
+
+      setDragActiveId(pageId);
+      setTouchDragGhost({
+        x: startX, y: startY,
+        width, label: page.title, icon: page.icon,
+      });
+      touchDragRef.current.ghostX = startX;
+      touchDragRef.current.ghostY = startY;
+      touchDragRef.current.ghostWidth = width;
+    }, 400);
+
+    touchDragRef.current = {
+      pageId, startX, startY,
+      timerId, activated: false,
+      ghostX: startX, ghostY: startY,
+      ghostWidth: width,
+      ghostLabel: page.title, ghostIcon: page.icon,
+    };
+  }, [props.renamingPageId]);
+
+  const handleRowTouchEnd = useCallback(() => {
+    const state = touchDragRef.current;
+    if (!state) return;
+
+    if (state.timerId) clearTimeout(state.timerId);
+
+    if (state.activated) {
+      // Execute the drop — use refs for latest values
+      executeTouchDrop(state.pageId, dropPreviewRef.current, dragOverTrashRef.current);
+      setDragActiveId(null);
+      setDragActiveWidth(0);
+      setDropPreview(null);
+      setDragOverTrash(false);
+      setTouchDragGhost(null);
+      touchDragEndTimeRef.current = Date.now();
+    }
+
+    touchDragRef.current = null;
+  }, [executeTouchDrop]);
+
+  // Native touchmove listener with { passive: false } to allow preventDefault during drag
+  useEffect(() => {
+    const handler = (e: TouchEvent) => {
+      const state = touchDragRef.current;
+      if (!state) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - state.startX;
+      const dy = touch.clientY - state.startY;
+
+      if (!state.activated) {
+        if (Math.sqrt(dx * dx + dy * dy) > 8) {
+          if (state.timerId) clearTimeout(state.timerId);
+          touchDragRef.current = null;
+        }
+        return;
+      }
+
+      // Prevent scrolling during drag
+      e.preventDefault();
+
+      state.ghostX = touch.clientX;
+      state.ghostY = touch.clientY;
+      setTouchDragGhost({
+        x: touch.clientX, y: touch.clientY,
+        width: state.ghostWidth, label: state.ghostLabel, icon: state.ghostIcon,
+      });
+
+      const { preview, overTrash } = computeTouchDropPreview(touch.clientY, touch.clientX, state.pageId);
+      setDropPreview(preview);
+      setDragOverTrash(overTrash);
+    };
+    const endHandler = () => {
+      const state = touchDragRef.current;
+      if (!state || !state.activated) return;
+      // Same logic as handleRowTouchEnd
+      executeTouchDrop(state.pageId, dropPreviewRef.current, dragOverTrashRef.current);
+      setDragActiveId(null);
+      setDragActiveWidth(0);
+      setDropPreview(null);
+      setDragOverTrash(false);
+      setTouchDragGhost(null);
+      touchDragEndTimeRef.current = Date.now();
+      touchDragRef.current = null;
+    };
+    document.addEventListener("touchmove", handler, { passive: false });
+    document.addEventListener("touchend", endHandler);
+    document.addEventListener("touchcancel", endHandler);
+    return () => {
+      document.removeEventListener("touchmove", handler);
+      document.removeEventListener("touchend", endHandler);
+      document.removeEventListener("touchcancel", endHandler);
+    };
+  }, [computeTouchDropPreview, executeTouchDrop]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      if (touchDragRef.current?.timerId) clearTimeout(touchDragRef.current.timerId);
+    };
+  }, []);
 
   const handleDragStart = useCallback(
     (event: DragStartEvent) => {
@@ -906,6 +1122,9 @@ function SidebarContent(props: SidebarContentProps) {
     },
     []
   );
+
+  const dragOverTrashRef = useRef(dragOverTrash);
+  dragOverTrashRef.current = dragOverTrash;
 
   const onDeletePageRef = useRef(onDeletePage);
   onDeletePageRef.current = onDeletePage;
@@ -1041,6 +1260,7 @@ function SidebarContent(props: SidebarContentProps) {
 
       {/* Page tree — DndContext always mounted to prevent useLayoutEffect size-change warning */}
       <div
+        ref={scrollContainerRef}
         className="flex-1 min-h-0 overflow-y-auto px-2 pb-2 scrollbar-hide"
         style={{
           display: searchQuery.trim() ? "none" : undefined,
@@ -1078,22 +1298,45 @@ function SidebarContent(props: SidebarContentProps) {
                   registerRowRef={registerRowRef}
                   groupChevronMap={groupChevronMap}
                   isTouch={isTouch}
+                  onRowTouchStart={handleRowTouchStart}
+                  onRowTouchEnd={handleRowTouchEnd}
+                  touchDragEndTimeRef={touchDragEndTimeRef}
                 />
               ))}
-              <DragOverlay dropAnimation={null}>
-                {dragActivePage ? (
-                  <div
-                    className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface border border-accent-mid text-sm text-text-2 opacity-90"
-                    style={{ width: dragActiveWidth || "auto" }}
-                  >
-                    {!isTouch && <GripVertical className="w-3 h-3 text-text-3 flex-shrink-0" />}
-                    <span className="text-sm flex-shrink-0">{dragActivePage.icon}</span>
-                    <span className="flex-1 min-w-0 truncate">{dragActivePage.title}</span>
-                  </div>
-                ) : null}
-              </DragOverlay>
+              {/* Desktop DragOverlay — only for dnd-kit desktop drag */}
+              {!isTouch && (
+                <DragOverlay dropAnimation={null}>
+                  {dragActivePage ? (
+                    <div
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg bg-surface border border-accent-mid text-sm text-text-2 opacity-90"
+                      style={{ width: dragActiveWidth || "auto" }}
+                    >
+                      <GripVertical className="w-3 h-3 text-text-3 flex-shrink-0" />
+                      <span className="text-sm flex-shrink-0">{dragActivePage.icon}</span>
+                      <span className="flex-1 min-w-0 truncate">{dragActivePage.title}</span>
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              )}
         </DndContext>
       </div>
+
+      {/* Touch ghost element — follows finger during long-press drag */}
+      {isTouch && touchDragGhost && (
+        <div
+          className="fixed z-[60] flex items-center gap-1 px-2 py-1 rounded-lg bg-surface border border-accent-mid text-sm text-text-2 shadow-lg pointer-events-none"
+          style={{
+            left: touchDragGhost.x - touchDragGhost.width / 2,
+            top: touchDragGhost.y - 20,
+            width: touchDragGhost.width,
+            opacity: 0.9,
+            transform: "scale(1.02)",
+          }}
+        >
+          <span className="text-sm flex-shrink-0">{touchDragGhost.icon}</span>
+          <span className="flex-1 min-w-0 truncate">{touchDragGhost.label}</span>
+        </div>
+      )}
 
       {/* Trash zone — visible during drag on touch devices */}
       {isTouch && dragActiveId && (
@@ -1136,6 +1379,9 @@ interface PageTreeItemProps {
   registerRowRef: (id: string, el: HTMLElement | null) => void;
   groupChevronMap: Record<string, boolean>;
   isTouch: boolean;
+  onRowTouchStart?: (e: React.TouchEvent, pageId: string) => void;
+  onRowTouchEnd?: () => void;
+  touchDragEndTimeRef?: React.RefObject<number>;
 }
 
 // Fixed column widths (px)
@@ -1149,6 +1395,7 @@ function PageTreeItem(props: PageTreeItemProps) {
     onSelect, onToggleExpand, onContextMenu, onRename, onFinishRename,
     onOpenEmojiPicker, onCreateSubpage, onDeletePage,
     dragActiveId, dropPreview, registerRowRef, groupChevronMap, isTouch,
+    onRowTouchStart, onRowTouchEnd, touchDragEndTimeRef,
   } = props;
 
   // Does my sibling group need a chevron column?
@@ -1206,7 +1453,6 @@ function PageTreeItem(props: PageTreeItemProps) {
       <div
         ref={(el) => {
           rowRef.current = el;
-          if (isTouch) setDragRef(el);
         }}
         className={`group flex items-center py-1 pr-1 rounded-lg cursor-pointer transition text-sm ${
           showMiddleHighlight
@@ -1214,14 +1460,22 @@ function PageTreeItem(props: PageTreeItemProps) {
             : isActive
               ? "bg-accent-light text-accent-dark"
               : "text-text-2 hover:bg-surface-2"
-        } ${isDragging ? "opacity-30" : ""}`}
+        } ${isDragging ? "opacity-40 scale-[1.02] shadow-lg" : ""}`}
         style={{ paddingLeft: indent, WebkitTouchCallout: isTouch ? "none" : undefined, userSelect: isTouch ? "none" : undefined }}
-        onClick={() => !isRenaming && onSelect(page.id)}
+        onClick={() => {
+          if (isRenaming || isDragging) return;
+          if (touchDragEndTimeRef?.current && Date.now() - touchDragEndTimeRef.current < 300) return;
+          onSelect(page.id);
+        }}
         onContextMenu={(e) => {
           e.preventDefault();
           if (!isTouch) onContextMenu(page.id, e.clientX, e.clientY);
         }}
-        {...(isTouch ? { ...attributes, ...listeners } : {})}
+        {...(isTouch ? {
+          onTouchStart: (e: React.TouchEvent) => onRowTouchStart?.(e, page.id),
+          onTouchEnd: onRowTouchEnd,
+          onTouchCancel: onRowTouchEnd,
+        } : {})}
       >
         {/* Drag handle — desktop only, fixed 20px */}
         {!isTouch && (
@@ -1326,6 +1580,9 @@ function PageTreeItem(props: PageTreeItemProps) {
           registerRowRef={registerRowRef}
           groupChevronMap={groupChevronMap}
           isTouch={isTouch}
+          onRowTouchStart={onRowTouchStart}
+          onRowTouchEnd={onRowTouchEnd}
+          touchDragEndTimeRef={touchDragEndTimeRef}
         />
       ))}
     </div>
@@ -1403,6 +1660,8 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     indentLevel: number;
     lastFlashedLevel: number;
     dropIdx: number;
+    allItems: HTMLElement[];
+    allSrcIdx: number;
   } | null>(null);
   const [liDragging, setLiDragging] = useState(false);
   const [liDropIndicator, setLiDropIndicator] = useState<number | null>(null);
@@ -1642,10 +1901,18 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     const srcIdx = siblings.indexOf(el);
     el.style.opacity = "0.4";
     const level = getLiIndentLevel(el);
+    const editor = editorRef.current;
+    const allItems = editor
+      ? elType === "todo"
+        ? Array.from(editor.querySelectorAll(".editor-todo")) as HTMLElement[]
+        : Array.from(editor.querySelectorAll("li")) as HTMLElement[]
+      : [];
+    const allSrcIdx = allItems.indexOf(el);
     liDragRef.current = {
       el, elType, intent: "none", startX: touch.clientX, startY: touch.clientY,
       parentList, siblings, srcIdx,
-      indentLevel: level, lastFlashedLevel: level, dropIdx: srcIdx,
+      indentLevel: level, lastFlashedLevel: level, dropIdx: allSrcIdx,
+      allItems, allSrcIdx,
     };
     setLiDragging(true);
   }, [getLiIndentLevel, liPositions]);
@@ -1682,26 +1949,31 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
               state.parentList = newParent;
               state.siblings = Array.from(newParent.children).filter((c) => c.tagName === "LI") as HTMLElement[];
               state.srcIdx = state.siblings.indexOf(state.el);
-              state.dropIdx = state.srcIdx;
             }
           }
         }
       }
     } else {
+      // Vertical mode: iterate over ALL elements of the same type (flat list across all levels)
       const wrapper = editorWrapperRef.current;
       if (!wrapper) return;
       const wrapperRect = wrapper.getBoundingClientRect();
-      let targetIdx = state.siblings.length;
-      for (let i = 0; i < state.siblings.length; i++) {
-        if (state.siblings[i] === state.el) continue;
-        const rect = state.siblings[i].getBoundingClientRect();
+      const items = state.allItems;
+      let targetIdx = items.length;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i] === state.el || state.el.contains(items[i])) continue; // skip self & descendants
+        const rect = items[i].getBoundingClientRect();
         if (touch.clientY < rect.top + rect.height / 2) { targetIdx = i; break; }
       }
       state.dropIdx = targetIdx;
-      if (targetIdx < state.siblings.length) {
-        setLiDropIndicator(state.siblings[targetIdx].getBoundingClientRect().top - wrapperRect.top);
+      if (targetIdx < items.length && !state.el.contains(items[targetIdx])) {
+        setLiDropIndicator(items[targetIdx].getBoundingClientRect().top - wrapperRect.top);
       } else {
-        const last = state.siblings[state.siblings.length - 1];
+        // Find last non-descendant item
+        let last: HTMLElement | null = null;
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (items[i] !== state.el && !state.el.contains(items[i])) { last = items[i]; break; }
+        }
         if (last) setLiDropIndicator(last.getBoundingClientRect().bottom - wrapperRect.top);
       }
     }
@@ -1712,18 +1984,48 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     if (!state) return;
     state.el.style.opacity = "";
     state.el.classList.remove("li-indent-flash");
-    if (state.intent === "vertical" && state.dropIdx !== state.srcIdx) {
-      const { el, parentList, srcIdx, dropIdx } = state;
-      parentList.removeChild(el);
-      const remaining = Array.from(parentList.children).filter((c) =>
-        state.elType === "todo" ? c.classList.contains("editor-todo") : c.tagName === "LI"
-      );
-      const adj = dropIdx > srcIdx ? dropIdx - 1 : dropIdx;
-      if (adj >= remaining.length) {
-        const lastSib = remaining[remaining.length - 1];
-        if (lastSib && lastSib.nextSibling) { parentList.insertBefore(el, lastSib.nextSibling); }
-        else { parentList.appendChild(el); }
-      } else { parentList.insertBefore(el, remaining[adj]); }
+    if (state.intent === "vertical" && state.dropIdx !== state.allSrcIdx) {
+      const { el, elType, allItems, allSrcIdx, dropIdx } = state;
+      if (elType === "todo") {
+        // Todos are top-level siblings — simple reorder
+        const parent = el.parentElement!;
+        parent.removeChild(el);
+        const remaining = allItems.filter(item => item !== el);
+        const adj = dropIdx > allSrcIdx ? dropIdx - 1 : dropIdx;
+        if (adj >= remaining.length) {
+          const last = remaining[remaining.length - 1];
+          if (last && last.nextSibling) parent.insertBefore(el, last.nextSibling);
+          else parent.appendChild(el);
+        } else {
+          parent.insertBefore(el, remaining[adj]);
+        }
+      } else {
+        // <li>: cross-level move — filter out descendants to avoid circular insertion
+        const remaining = allItems.filter(item => item !== el && !el.contains(item));
+        // Count how many removed items (el + descendants) are before dropIdx
+        let removedBefore = 0;
+        for (let i = 0; i < dropIdx && i < allItems.length; i++) {
+          if (allItems[i] === el || el.contains(allItems[i])) removedBefore++;
+        }
+        const adj = dropIdx - removedBefore;
+
+        if (adj >= 0 && adj <= remaining.length) {
+          const oldParent = el.parentElement!;
+          oldParent.removeChild(el);
+          if (oldParent.children.length === 0 && oldParent !== editorRef.current) {
+            oldParent.remove();
+          }
+          if (adj < remaining.length) {
+            const targetEl = remaining[adj];
+            const targetParent = targetEl.parentElement!;
+            targetParent.insertBefore(el, targetEl);
+          } else if (remaining.length > 0) {
+            const lastEl = remaining[remaining.length - 1];
+            const lastParent = lastEl.parentElement!;
+            lastParent.insertBefore(el, lastEl.nextSibling);
+          }
+        }
+      }
       syncContent();
     }
     liDragRef.current = null;
@@ -1755,10 +2057,18 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     const srcIdx = siblings.indexOf(el);
     el.style.opacity = "0.4";
     const level = getLiIndentLevel(el);
+    const editor = editorRef.current;
+    const allItems = editor
+      ? elType === "todo"
+        ? Array.from(editor.querySelectorAll(".editor-todo")) as HTMLElement[]
+        : Array.from(editor.querySelectorAll("li")) as HTMLElement[]
+      : [];
+    const allSrcIdx = allItems.indexOf(el);
     liDragRef.current = {
       el, elType, intent: "none", startX: e.clientX, startY: e.clientY,
       parentList, siblings, srcIdx,
-      indentLevel: level, lastFlashedLevel: level, dropIdx: srcIdx,
+      indentLevel: level, lastFlashedLevel: level, dropIdx: allSrcIdx,
+      allItems, allSrcIdx,
     };
     setLiDragging(true);
   }, [getLiIndentLevel, liPositions]);
@@ -1792,26 +2102,30 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
               state.parentList = newParent;
               state.siblings = Array.from(newParent.children).filter((c) => c.tagName === "LI") as HTMLElement[];
               state.srcIdx = state.siblings.indexOf(state.el);
-              state.dropIdx = state.srcIdx;
             }
           }
         }
       }
     } else {
+      // Vertical mode: iterate over ALL elements of the same type (flat list across all levels)
       const wrapper = editorWrapperRef.current;
       if (!wrapper) return;
       const wrapperRect = wrapper.getBoundingClientRect();
-      let targetIdx = state.siblings.length;
-      for (let i = 0; i < state.siblings.length; i++) {
-        if (state.siblings[i] === state.el) continue;
-        const rect = state.siblings[i].getBoundingClientRect();
+      const items = state.allItems;
+      let targetIdx = items.length;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i] === state.el || state.el.contains(items[i])) continue;
+        const rect = items[i].getBoundingClientRect();
         if (e.clientY < rect.top + rect.height / 2) { targetIdx = i; break; }
       }
       state.dropIdx = targetIdx;
-      if (targetIdx < state.siblings.length) {
-        setLiDropIndicator(state.siblings[targetIdx].getBoundingClientRect().top - wrapperRect.top);
+      if (targetIdx < items.length && !state.el.contains(items[targetIdx])) {
+        setLiDropIndicator(items[targetIdx].getBoundingClientRect().top - wrapperRect.top);
       } else {
-        const last = state.siblings[state.siblings.length - 1];
+        let last: HTMLElement | null = null;
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (items[i] !== state.el && !state.el.contains(items[i])) { last = items[i]; break; }
+        }
         if (last) setLiDropIndicator(last.getBoundingClientRect().bottom - wrapperRect.top);
       }
     }
@@ -1822,18 +2136,46 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     if (!state) return;
     state.el.style.opacity = "";
     state.el.classList.remove("li-indent-flash");
-    if (state.intent === "vertical" && state.dropIdx !== state.srcIdx) {
-      const { el, parentList, srcIdx, dropIdx } = state;
-      parentList.removeChild(el);
-      const remaining = Array.from(parentList.children).filter((c) =>
-        state.elType === "todo" ? c.classList.contains("editor-todo") : c.tagName === "LI"
-      );
-      const adj = dropIdx > srcIdx ? dropIdx - 1 : dropIdx;
-      if (adj >= remaining.length) {
-        const lastSib = remaining[remaining.length - 1];
-        if (lastSib && lastSib.nextSibling) { parentList.insertBefore(el, lastSib.nextSibling); }
-        else { parentList.appendChild(el); }
-      } else { parentList.insertBefore(el, remaining[adj]); }
+    if (state.intent === "vertical" && state.dropIdx !== state.allSrcIdx) {
+      const { el, elType, allItems, allSrcIdx, dropIdx } = state;
+      if (elType === "todo") {
+        const parent = el.parentElement!;
+        parent.removeChild(el);
+        const remaining = allItems.filter(item => item !== el);
+        const adj = dropIdx > allSrcIdx ? dropIdx - 1 : dropIdx;
+        if (adj >= remaining.length) {
+          const last = remaining[remaining.length - 1];
+          if (last && last.nextSibling) parent.insertBefore(el, last.nextSibling);
+          else parent.appendChild(el);
+        } else {
+          parent.insertBefore(el, remaining[adj]);
+        }
+      } else {
+        // <li>: cross-level move — filter out descendants to avoid circular insertion
+        const remaining = allItems.filter(item => item !== el && !el.contains(item));
+        let removedBefore = 0;
+        for (let i = 0; i < dropIdx && i < allItems.length; i++) {
+          if (allItems[i] === el || el.contains(allItems[i])) removedBefore++;
+        }
+        const adj = dropIdx - removedBefore;
+
+        if (adj >= 0 && adj <= remaining.length) {
+          const oldParent = el.parentElement!;
+          oldParent.removeChild(el);
+          if (oldParent.children.length === 0 && oldParent !== editorRef.current) {
+            oldParent.remove();
+          }
+          if (adj < remaining.length) {
+            const targetEl = remaining[adj];
+            const targetParent = targetEl.parentElement!;
+            targetParent.insertBefore(el, targetEl);
+          } else if (remaining.length > 0) {
+            const lastEl = remaining[remaining.length - 1];
+            const lastParent = lastEl.parentElement!;
+            lastParent.insertBefore(el, lastEl.nextSibling);
+          }
+        }
+      }
       syncContent();
     }
     liDragRef.current = null;
