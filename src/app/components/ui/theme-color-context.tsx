@@ -1,15 +1,19 @@
 /**
  * ThemeColorProvider
  *
- * Hält <meta name="theme-color"> immer synchron mit der Farbe des Elements,
- * das direkt über der Android-Gestenleiste liegt:
+ * Verwaltet zwei separate System-Chrome-Farben:
  *
- *   • Standard (Bottom-Nav sichtbar) → --surface (Hintergrund der Nav)
- *   • Drawer / Modal offen (z-[1000]) → --surface (Hintergrund des Drawers)
- *   • Dark-Mode-Toggle             → sofortige Aktualisierung
+ *   1. <meta name="theme-color"> — Android/iOS Status Bar (oben)
+ *      • Normal:       --zu-bg  (Seiten-Hintergrund, helles Grau / Schwarz)
+ *      • Drawer offen: --zu-bg  (unverändert — Overlay dimmt Seite)
  *
- * Erkennung läuft vollautomatisch via MutationObserver auf className-Attribute;
- * kein manuelles Wiring in den Screen-Komponenten nötig.
+ *   2. document.body.backgroundColor — Android Gesture Bar (unten)
+ *      • Normal:       --surface (Bottom-Nav-Farbe: Weiß / Dunkelgrau)
+ *      • Drawer offen: --zu-bg  (passt zur Overlay-Stimmung)
+ *
+ * Reagiert automatisch auf:
+ *   - Dark/Light-Mode-Wechsel (MutationObserver auf data-theme)
+ *   - Drawer öffnen/schließen (MutationObserver auf DOM + optionaler manueller Call)
  */
 import React, {
   createContext,
@@ -21,8 +25,8 @@ import React, {
 
 /* ── Typen ────────────────────────────────────────────────────────── */
 interface ThemeColorContextValue {
-  /** Manuell Farbe überschreiben (z. B. für Custom-Drawers) */
-  setDrawerOpen: (open: boolean, cssVar?: string) => void;
+  /** Manuell Drawer-Status melden (für Custom-Drawers ohne z-[1000]) */
+  setDrawerOpen: (open: boolean) => void;
 }
 
 const ThemeColorContext = createContext<ThemeColorContextValue>({
@@ -31,15 +35,15 @@ const ThemeColorContext = createContext<ThemeColorContextValue>({
 
 /* ── Hilfsfunktionen ─────────────────────────────────────────────── */
 
-/** Löst einen CSS-Custom-Property-Namen zu einem echten Hex-Wert auf. */
+/** Löst eine CSS Custom Property zu einem konkreten String auf. */
 function resolveCssVar(varName: string): string {
   return getComputedStyle(document.documentElement)
     .getPropertyValue(varName)
     .trim();
 }
 
-/** Setzt <meta name="theme-color"> auf einen konkreten Farbwert. */
-function setMetaColor(color: string) {
+/** Setzt <meta name="theme-color"> (Status Bar). */
+function setMetaThemeColor(color: string) {
   let meta = document.querySelector(
     'meta[name="theme-color"]'
   ) as HTMLMetaElement | null;
@@ -48,9 +52,19 @@ function setMetaColor(color: string) {
     meta.name = "theme-color";
     document.head.appendChild(meta);
   }
-  if (meta.content !== color) {
-    meta.content = color;
+  if (meta.content !== color) meta.content = color;
+}
+
+/** Setzt document.body.backgroundColor (Gesture Bar). */
+function setBodyBg(color: string) {
+  if (document.body.style.backgroundColor !== color) {
+    document.body.style.backgroundColor = color;
   }
+}
+
+/** Erkennt ob Dark Mode aktiv ist (data-theme="dark" auf <html>). */
+function isDarkMode(): boolean {
+  return document.documentElement.getAttribute("data-theme") === "dark";
 }
 
 /**
@@ -67,49 +81,51 @@ export function ThemeColorProvider({
 }: {
   children: React.ReactNode;
 }) {
-  /**
-   * manualOverride: { open: true, cssVar: '--surface' }
-   * Wenn gesetzt, hat dieser Wert Vorrang vor der DOM-Erkennung.
-   */
-  const manualRef = useRef<{ open: boolean; cssVar: string } | null>(null);
+  /** true wenn Drawer via manualRef gemeldet ist */
+  const manualDrawerOpen = useRef(false);
 
   /* Kern-Update-Funktion ------------------------------------------ */
-  const updateThemeColor = useCallback(() => {
-    let cssVar = "--surface";
+  const updateColors = useCallback(() => {
+    const dark = isDarkMode();
+    const drawerOpen = manualDrawerOpen.current || isDrawerPresent();
 
-    if (manualRef.current) {
-      cssVar = manualRef.current.open
-        ? manualRef.current.cssVar
-        : "--surface";
-    } else if (isDrawerPresent()) {
-      // Drawers haben ebenfalls --surface als Hintergrund
-      cssVar = "--surface";
+    // ── Status Bar (meta theme-color) ──────────────────────────────
+    // Immer --zu-bg (Seiten-Hintergrund), egal ob Drawer offen oder nicht.
+    // Im Dark Mode ist --zu-bg fast schwarz (#141412).
+    const statusBarColor = resolveCssVar("--zu-bg");
+    if (statusBarColor) setMetaThemeColor(statusBarColor);
+
+    // ── Gesture Bar (body background) ─────────────────────────────
+    // Normal:       --surface = Bottom-Nav-Farbe (Weiß / #1E1E1B)
+    // Drawer offen: --zu-bg   = Seiten-Hintergrund (passt zur Overlay-Stimmung)
+    if (drawerOpen) {
+      const drawerBg = resolveCssVar("--zu-bg");
+      if (drawerBg) setBodyBg(drawerBg);
+    } else {
+      const navBg = dark
+        ? resolveCssVar("--surface")   // Dark: #1E1E1B (Nav-Hintergrund)
+        : "#ffffff";                   // Light: Weiß (Bottom Nav Hintergrund)
+      if (navBg) setBodyBg(navBg);
     }
-
-    const color = resolveCssVar(cssVar);
-    if (color) setMetaColor(color);
   }, []);
 
   useEffect(() => {
     // Initiales Setzen
-    updateThemeColor();
+    updateColors();
 
     // ── Observer 1: DOM-Änderungen (Drawer öffnet / schließt) ──────
     const domObserver = new MutationObserver(() => {
-      // Nur neu berechnen, wenn kein manueller Override aktiv ist
-      if (!manualRef.current) updateThemeColor();
+      updateColors();
     });
     domObserver.observe(document.body, {
       childList: true,
       subtree: true,
-      // Auch Attribut-Änderungen auf className fangen
-      // (z. B. wenn Klassen per Toggle wechseln statt via Add/Remove)
       attributes: true,
       attributeFilter: ["class"],
     });
 
     // ── Observer 2: Dark-Mode-Toggle (data-theme auf <html>) ───────
-    const themeObserver = new MutationObserver(updateThemeColor);
+    const themeObserver = new MutationObserver(updateColors);
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],
@@ -119,15 +135,15 @@ export function ThemeColorProvider({
       domObserver.disconnect();
       themeObserver.disconnect();
     };
-  }, [updateThemeColor]);
+  }, [updateColors]);
 
   /* Manueller Override für spezielle Fälle ----------------------- */
   const setDrawerOpen = useCallback(
-    (open: boolean, cssVar = "--surface") => {
-      manualRef.current = open ? { open, cssVar } : null;
-      updateThemeColor();
+    (open: boolean) => {
+      manualDrawerOpen.current = open;
+      updateColors();
     },
-    [updateThemeColor]
+    [updateColors]
   );
 
   return (

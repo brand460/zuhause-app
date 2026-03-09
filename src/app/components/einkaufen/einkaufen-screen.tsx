@@ -3049,28 +3049,37 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
         }
       `}</style>
 
-      {/* Screen Header */}
-      <div className="flex-shrink-0 px-4 pt-4 pb-2" style={{ background: "var(--zu-bg)" }}>
-        <h2 className="text-lg font-bold text-text-1">Einkaufen</h2>
+      {/* ── Sticky top bar: Header + Store Selector ─────────────────
+           position:sticky + flex-shrink:0 — scrollt NIEMALS weg,
+           auch wenn das Layout durch Tastatur oder Scrolling variiert.
+           Das background deckt darunterlaufenden Listen-Content ab.    */}
+      <div
+        className="flex-shrink-0"
+        style={{ position: "sticky", top: 0, zIndex: 10, background: "var(--zu-bg)" }}
+      >
+        {/* Screen Header */}
+        <div className="px-4 pt-4 pb-2">
+          <h2 className="text-lg font-bold text-text-1">Einkaufen</h2>
+        </div>
+
+        {/* Store Selector */}
+        <div ref={storeSelectorRef}>
+          <StoreSelector
+            stores={stores}
+            selectedStore={selectedStore}
+            onSelect={setSelectedStore}
+            itemCounts={itemCounts}
+            onAddStore={() => setShowAddStore(true)}
+            onLongPress={handleStoreLongPress}
+            isReorderMode={storeReorderMode}
+            onStoreReorderEnd={handleStoreReorderEnd}
+            transferHoveredStoreId={hoveredStoreId}
+            isTransferActive={storeTransferActive}
+          />
+        </div>
       </div>
 
-      {/* Store selector — stays at top, never moves */}
-      <div className="flex-shrink-0 z-10" ref={storeSelectorRef}>
-        <StoreSelector
-          stores={stores}
-          selectedStore={selectedStore}
-          onSelect={setSelectedStore}
-          itemCounts={itemCounts}
-          onAddStore={() => setShowAddStore(true)}
-          onLongPress={handleStoreLongPress}
-          isReorderMode={storeReorderMode}
-          onStoreReorderEnd={handleStoreReorderEnd}
-          transferHoveredStoreId={hoveredStoreId}
-          isTransferActive={storeTransferActive}
-        />
-      </div>
-
-      {/* Scrollable list area — dynamic padding-bottom for the fixed input bar */}
+      {/* ── Scrollable list area — NUR dieser Bereich scrollt ──── */}
       <div
         ref={scrollContainerRef}
         className="flex-1 min-h-0 overflow-y-auto flex flex-col"
