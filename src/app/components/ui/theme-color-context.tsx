@@ -57,8 +57,24 @@ function setMetaThemeColor(color: string) {
 
 /** Setzt document.body.backgroundColor (Gesture Bar). */
 function setBodyBg(color: string) {
+  /**
+   * Gesture-Bar-Fix: Chrome liest die Farbe aus dem untersten sichtbaren
+   * Pixel der Seite. Da #root (height:100% + overflow:hidden) und die
+   * position:fixed MainShell den Body komplett überlagern, muss die Farbe
+   * auf ALLEN drei Layern gleichzeitig gesetzt werden:
+   *   html  → unterste CSS-Schicht / Fallback
+   *   body  → primäre Quelle für Chromes Heuristik
+   *   #root → überlagert body normalerweise → braucht identische Farbe
+   */
+  if (document.documentElement.style.backgroundColor !== color) {
+    document.documentElement.style.backgroundColor = color;
+  }
   if (document.body.style.backgroundColor !== color) {
     document.body.style.backgroundColor = color;
+  }
+  const root = document.getElementById("root");
+  if (root && root.style.backgroundColor !== color) {
+    root.style.backgroundColor = color;
   }
 }
 

@@ -300,14 +300,18 @@ interface MonthGridProps {
 const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightMonth, today, isDark, onDayClick }: MonthGridProps) {
   const { weeks, weekBands, cellSingleEvents, cellAllEvents } = data;
   return (
-    <div style={{ flex: "0 0 33.3333%" }}>
-      <div className="grid grid-cols-7 mb-0.5">
+    // height: 100% fills the track panel height set by the outer grid container
+    <div style={{ flex: "0 0 33.3333%", height: "100%", display: "flex", flexDirection: "column" }}>
+      {/* Weekday labels row — never shrinks */}
+      <div className="grid grid-cols-7 mb-0.5 flex-shrink-0">
         {WEEKDAYS.map((wd) => (
           <div key={wd} className="text-center text-[11px] font-semibold text-text-3 py-1">
             {wd}
           </div>
         ))}
       </div>
+      {/* Weeks wrapper: flex-col distributes height equally across week rows */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       {weeks.map((week, weekIdx) => {
         const bands = weekBands[weekIdx];
         const maxLanes = bands.length > 0 ? Math.max(...bands.map((b) => b.lane)) + 1 : 0;
@@ -316,7 +320,8 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
           <div
               key={weekIdx}
               className="relative grid grid-cols-7"
-              style={{ minHeight: 95 }}
+              // flex:1 → equal height share; overflow:hidden clips events beyond row height
+              style={{ flex: 1, minHeight: 0, overflow: "hidden" }}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const col = Math.min(6, Math.max(0, Math.floor((e.clientX - rect.left) / (rect.width / 7))));
@@ -375,7 +380,7 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
                   className={`flex flex-col items-center pt-1 relative overflow-visible ${
                     isSelected ? "rounded-lg" : ""
                   }`}
-                  style={{ minHeight: 95, height: "100%", backgroundColor: isSelected ? "var(--surface-2)" : undefined }}
+                  style={{ height: "100%", backgroundColor: isSelected ? "var(--surface-2)" : undefined }}
                 >
                   <div
                     className={`w-6 h-6 flex items-center justify-center rounded-full text-xs relative z-10 flex-shrink-0 ${
@@ -435,6 +440,7 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
           </div>
         );
       })}
+      </div>{/* end weeks wrapper */}
     </div>
   );
 });
@@ -785,6 +791,10 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
   const trackRef = useRef<HTMLDivElement>(null);
   const isTransitioningRef = useRef(false);
 
+  // Grid uses height: 58dvh (viewport-relative CSS, set inline in JSX).
+  // dvh = dynamic viewport height → automatically correct on iOS/Android,
+  // accounts for browser chrome. No ResizeObserver needed.
+
   const animateToMonth = useCallback((direction: "prev" | "next") => {
     if (isTransitioningRef.current) return;
     const track = trackRef.current;
@@ -847,7 +857,12 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
   }, [currentMonth, currentYear]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    // Screen container: fills the MainShell "absolute inset-0" slot.
+    // paddingTop pushes content below the status bar via safe-area-inset-top.
+    <div
+      className="absolute inset-0 flex flex-col overflow-hidden"
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
+    >
       {/* Screen Header */}
       <div className="flex-shrink-0 px-4 pt-4 pb-2" style={{ background: "var(--zu-bg)" }}>
         <h2 className="text-lg font-bold text-text-1">Kalender</h2>
@@ -872,10 +887,13 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
         </button>
       </div>
 
-      {/* Calendar Grid — 3-panel track: [prev] [current] [next] */}
+      {/* Calendar Grid — 3-panel track: [prev] [current] [next]
+          height: 58dvh — fixed proportion of the dynamic viewport height.
+          dvh already accounts for browser chrome / address bar on mobile.
+          The grid never scrolls; MonthGrid rows distribute height via flex:1. */}
       <div
         className="flex-shrink-0 bg-surface px-1 pb-1 pt-1 overflow-hidden rounded-b-[16px]"
-        style={{ boxShadow: "var(--shadow-card)" }}
+        style={{ boxShadow: "var(--shadow-card)", height: "58dvh" }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
@@ -884,6 +902,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
           style={{
             display: "flex",
             width: "300%",
+            height: "100%",
             transform: "translateX(-33.3333%)",
             willChange: "transform",
           }}
@@ -915,8 +934,8 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
         </div>
       </div>
 
-      {/* Event Panel */}
-      <div className="flex flex-col flex-1 min-h-0" style={{ background: "var(--zu-bg)" }}>
+      {/* Event Panel — takes all remaining space; min-height so it's always visible */}
+      <div className="flex flex-col min-h-0 overflow-hidden" style={{ flex: 1, minHeight: 120, background: "var(--zu-bg)" }}>
         <div className="flex-shrink-0 flex items-center justify-between px-5 py-3">
           <h3 className="text-sm font-bold text-text-1">{formatDateLong(selectedDate)}</h3>
           <button
@@ -927,7 +946,11 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 px-4 pb-4 overflow-y-auto">
+        {/* paddingBottom includes env(safe-area-inset-bottom) for the gesture bar */}
+        <div
+          className="flex-1 min-h-0 px-4 overflow-y-auto"
+          style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
+        >
           {selectedDayEvents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-text-3">
               <p className="text-sm">Keine Termine</p>

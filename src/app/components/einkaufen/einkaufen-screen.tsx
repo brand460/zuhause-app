@@ -57,7 +57,6 @@ import {
 } from "./shopping-data";
 import { API_BASE } from "../supabase-client";
 import { publicAnonKey } from "/utils/supabase/info";
-import { useKeyboardHeight } from "./use-keyboard-height";
 import { useKvRealtime, markLocalWrite } from "../use-kv-realtime";
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -2149,8 +2148,16 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastLocalChangeRef = useRef<number>(0);
   const bottomBarRef = useRef<HTMLDivElement>(null);
-  const [bottomBarHeight, setBottomBarHeight] = useState(56);
-  const keyboardHeight = useKeyboardHeight();
+
+  // ── Fixed layout measurements ─────────────────────────────────
+  // storeSelectorH: pixel height of the Store-Selector header (top anchor for list)
+  const [storeSelectorH, setStoreSelectorH] = useState(82);
+  // addItemBarH: pixel height of the AddItemBar (bottom anchor for list)
+  const addItemBarHRef = useRef(60);
+  // listBottomFixed: dynamic CSS `bottom` value for the list container
+  //   keyboard closed → addItemBarH
+  //   keyboard open   → keyboardHeight + addItemBarH
+  const [listBottomFixed, setListBottomFixed] = useState(60);
 
   // ── Load items + store settings ────────────────────────────────
   const reloadAllData = useCallback(async () => {
@@ -3027,20 +3034,64 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
     return result;
   }, [storeSettings]);
 
-  // Measure the bottom bar height for scroll area padding
+  // ── updateListBottom: recalculates list container's bottom offset ──
+  // Called whenever keyboard state OR addItemBar height changes.
+  //   keyboard closed → bottom = addItemBarH
+  //   keyboard open   → bottom = keyboardHeight + addItemBarH
+  // Uses refs so the callback never goes stale.
+  const updateListBottom = useCallback(() => {
+    const vv = window.visualViewport;
+    const kbH = vv
+      ? Math.max(0, window.innerHeight - vv.height - (vv.offsetTop || 0))
+      : 0;
+    const isKbOpen = kbH > 80;
+    setListBottomFixed(isKbOpen ? kbH + addItemBarHRef.current : addItemBarHRef.current);
+  }, []);
+
+  // ── Measure store-selector height ─────────────────────────────
   useEffect(() => {
-    if (!bottomBarRef.current) return;
+    if (!storeSelectorRef.current) return;
     const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setBottomBarHeight(entry.contentRect.height);
-      }
+      setStoreSelectorH(entries[0].contentRect.height);
     });
-    ro.observe(bottomBarRef.current);
+    ro.observe(storeSelectorRef.current);
     return () => ro.disconnect();
   }, []);
 
+  // ── Measure add-item-bar height; update listBottom on change ──
+  useEffect(() => {
+    if (!bottomBarRef.current) return;
+    const ro = new ResizeObserver(() => {
+      // Use getBoundingClientRect for full rendered height (incl. borders)
+      const h = bottomBarRef.current?.getBoundingClientRect().height ?? 0;
+      addItemBarHRef.current = h;
+      updateListBottom();
+    });
+    ro.observe(bottomBarRef.current);
+    return () => ro.disconnect();
+  }, [updateListBottom]);
+
+  // ── Listen to visualViewport resize/scroll (keyboard open/close) ─
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) {
+      setListBottomFixed(addItemBarHRef.current);
+      return;
+    }
+    updateListBottom(); // initial calculation
+    vv.addEventListener("resize", updateListBottom);
+    vv.addEventListener("scroll", updateListBottom);
+    return () => {
+      vv.removeEventListener("resize", updateListBottom);
+      vv.removeEventListener("scroll", updateListBottom);
+    };
+  }, [updateListBottom]);
+
   return (
-    <div className="flex-1 flex flex-col min-h-0 relative" style={{ background: "var(--zu-bg)" }}>
+    <div
+      className="flex-1 min-h-0 relative overflow-hidden"
+      style={{ background: "var(--zu-bg)" }}
+    >
       {/* Wiggle animation for store reorder */}
       <style>{`
         @keyframes wiggle {
@@ -3049,13 +3100,20 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
         }
       `}</style>
 
-      {/* ── Sticky top bar: Header + Store Selector ─────────────────
-           position:sticky + flex-shrink:0 — scrollt NIEMALS weg,
-           auch wenn das Layout durch Tastatur oder Scrolling variiert.
-           Das background deckt darunterlaufenden Listen-Content ab.    */}
+      {/* ── Store Selector ─────────────────────────────────────────────
+           position: absolute, top: 0  — scrollt NIEMALS weg.
+           Tastatur hat keinen Einfluss: interaktive-widget=resizes-visual
+           lässt den Layout-Viewport unverändert, daher bleibt top:0 fest.  */}
       <div
-        className="flex-shrink-0"
-        style={{ position: "sticky", top: 0, zIndex: 10, background: "var(--zu-bg)" }}
+        ref={storeSelectorRef}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          background: "var(--zu-bg)",
+        }}
       >
         {/* Screen Header */}
         <div className="px-4 pt-4 pb-2">
@@ -3063,34 +3121,45 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
         </div>
 
         {/* Store Selector */}
-        <div ref={storeSelectorRef}>
-          <StoreSelector
-            stores={stores}
-            selectedStore={selectedStore}
-            onSelect={setSelectedStore}
-            itemCounts={itemCounts}
-            onAddStore={() => setShowAddStore(true)}
-            onLongPress={handleStoreLongPress}
-            isReorderMode={storeReorderMode}
-            onStoreReorderEnd={handleStoreReorderEnd}
-            transferHoveredStoreId={hoveredStoreId}
-            isTransferActive={storeTransferActive}
-          />
-        </div>
+        <StoreSelector
+          stores={stores}
+          selectedStore={selectedStore}
+          onSelect={setSelectedStore}
+          itemCounts={itemCounts}
+          onAddStore={() => setShowAddStore(true)}
+          onLongPress={handleStoreLongPress}
+          isReorderMode={storeReorderMode}
+          onStoreReorderEnd={handleStoreReorderEnd}
+          transferHoveredStoreId={hoveredStoreId}
+          isTransferActive={storeTransferActive}
+        />
       </div>
 
-      {/* ── Scrollable list area — NUR dieser Bereich scrollt ──── */}
+      {/* ── Scrollable list area ────────────────────────────────────────
+           Füllt den Raum zwischen Store-Selector (top: storeSelectorH)
+           und AddItemBar (bottom: listBottomFixed).
+           listBottomFixed wird per visualViewport-Listener angepasst:
+             Tastatur zu  → listBottomFixed = addItemBarH
+             Tastatur auf → listBottomFixed = keyboardHeight + addItemBarH
+           So ist die Liste immer vollständig sichtbar.               */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 min-h-0 overflow-y-auto flex flex-col"
-        style={{ paddingBottom: bottomBarHeight + keyboardHeight }}
+        style={{
+          position: "absolute",
+          top: storeSelectorH,
+          left: 0,
+          right: 0,
+          bottom: listBottomFixed,
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+        }}
       >
         {!loaded ? (
-          <div className="flex-1 flex items-center justify-center py-20">
+          <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           </div>
         ) : sortedStoreItems.length === 0 && checkedItems.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center py-20 px-6">
+          <div className="flex flex-col items-center justify-center py-20 px-6" style={{ minHeight: "100%" }}>
             <div className="w-14 h-14 rounded-xl bg-accent-light flex items-center justify-center mb-3">
               <Search className="w-7 h-7 text-accent" />
             </div>
@@ -3102,7 +3171,7 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
             </p>
           </div>
         ) : sortedStoreItems.length === 0 && checkedItems.length > 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center py-20 px-6">
+          <div className="flex flex-col items-center justify-center py-20 px-6" style={{ minHeight: "100%" }}>
             <div className="w-14 h-14 rounded-xl bg-accent-light flex items-center justify-center mb-3">
               <Check className="w-7 h-7 text-accent" />
             </div>
@@ -3125,6 +3194,7 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
             </button>
           </div>
         ) : null}
+
         {/* DndContext always mounted to prevent useLayoutEffect dep-array size change warning */}
         <DndContext
           sensors={sensors}
@@ -3165,9 +3235,7 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
           </SortableContext>
         </DndContext>
 
-        {/* Spacer pushes checked section to bottom of visible scroll area (only when keyboard is closed) */}
-        {keyboardHeight === 0 && <div className="flex-1" />}
-        {/* Checked items — inside scroll area so they scroll with the list */}
+        {/* Checked items — always at the end of the scroll area */}
         <div ref={checkedSectionRef}>
           <CheckedSection
             items={checkedItems}
@@ -3177,21 +3245,21 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
         </div>
       </div>
 
-      {/* Add item bar — fixed when keyboard open, absolute otherwise */}
+      {/* ── AddItemBar (Thumb-Nav) ──────────────────────────────────────
+           position: absolute, bottom: 0  — bleibt immer am unteren Rand
+           des Content-Bereichs (= über der Bottom-Nav).
+           Bei geöffneter Tastatur deckt die Tastatur diese Bar ab —
+           das ist korrekt. Die Liste (listBottomFixed) wird gleichzeitig
+           nach oben verkleinert, sodass alle Einträge über der Tastatur
+           sichtbar bleiben.                                            */}
       <div
         ref={bottomBarRef}
-        className="z-10 bg-surface"
-        style={keyboardHeight > 0 ? {
-          position: "fixed",
-          left: 0,
-          right: 0,
-          bottom: keyboardHeight,
-          willChange: "bottom",
-        } : {
+        style={{
           position: "absolute",
+          bottom: 0,
           left: 0,
           right: 0,
-          bottom: 0,
+          zIndex: 100,
         }}
       >
         <AddItemBar

@@ -4,8 +4,8 @@
   "description": "Die App für unseren Alltag",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F7F7F5",
-  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "theme_color": "#F7F7F5",
   "navigation_bar_color": "#ffffff",
   "orientation": "portrait",
   "icons": [

@@ -19,10 +19,15 @@ import { AppContent } from "./components/app-content";
     const meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
     if (meta) meta.content = statusColor;
 
-    // Gesture Bar (body background):
-    //   Light → white (#FFFFFF = --surface / Bottom-Nav)
-    //   Dark  → #1E1E1B (--surface dark / Bottom-Nav dark)
-    document.body.style.backgroundColor = isDark ? "#1E1E1B" : "#ffffff";
+    // Gesture Bar — alle drei Layer gleichzeitig setzen:
+    //   html, body, #root müssen identisch sein, da #root / MainShell
+    //   den body normalerweise vollständig überlagern.
+    //   Light → #ffffff (Bottom Nav)  |  Dark → #1E1E1B (Bottom Nav dark)
+    const gestureColor = isDark ? "#1E1E1B" : "#ffffff";
+    document.documentElement.style.backgroundColor = gestureColor;
+    document.body.style.backgroundColor = gestureColor;
+    const root = document.getElementById("root");
+    if (root) root.style.backgroundColor = gestureColor;
   } catch (_) {
     // localStorage not available — stay with defaults
   }
