@@ -21,6 +21,7 @@ import {
 import { CookingPot, Notepad } from "phosphor-react";
 import { apiFetch } from "../supabase-client";
 import { useKvRealtime, markLocalWrite } from "../use-kv-realtime";
+import { useBackHandler } from "../ui/use-back-handler";
 import {
   CalendarEvent,
   CalendarLabel,
@@ -590,6 +591,10 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
     [`calendar_events:${DEV_HOUSEHOLD_ID}`, `calendar_labels:${DEV_HOUSEHOLD_ID}`],
     reloadAll,
   );
+
+  // ── Back-gesture handlers for drawers/modals ──────────────────
+  useBackHandler(showEditor, () => { setShowEditor(false); setEditingEvent(null); });
+  useBackHandler(showRecurringPrompt, () => { setShowRecurringPrompt(false); setPendingEdit(null); });
 
   // ── Event CRUD ─────────────────────────────────────────────────
 
@@ -1977,6 +1982,17 @@ function EventEditorSheet({
   }, []);
   // Always leave 72 px visible above the drawer so it looks like a sheet, not a full screen
   const drawerMaxHeight = vpHeight - 72;
+
+  // ── Back-gesture handlers for sub-drawers ─────────────────────
+  useBackHandler(showStartPicker, () => setShowStartPicker(false));
+  useBackHandler(showEndPicker, () => setShowEndPicker(false));
+  useBackHandler(showLabelPopup, () => setShowLabelPopup(false));
+  useBackHandler(showRepeatPopup, () => setShowRepeatPopup(false));
+  useBackHandler(showNotificationPopup, () => setShowNotificationPopup(false));
+  useBackHandler(showRecipePickerDrawer, () => setShowRecipePickerDrawer(false));
+  useBackHandler(showNotePickerDrawer, () => setShowNotePickerDrawer(false));
+  useBackHandler(showDeleteConfirm, () => setShowDeleteConfirm(false));
+  useBackHandler(showDiscardConfirm, () => setShowDiscardConfirm(false));
 
   // ── Pages for note linking ─────────────────────────────────────
   interface LinkedPage { id: string; title: string; icon: string; parent_id: string | null; position: number; }

@@ -12,6 +12,7 @@ import type {
   Recipe, MealPlanEntry, Ingredient, RecipeStep, CategoryFilter,
 } from "./kochen-types";
 import { HOUSEHOLD_ID, RECIPE_CATEGORIES } from "./kochen-types";
+import { useBackHandler, pushBack, popBack } from "../ui/use-back-handler";
 
 const DRAWER_SPRING = { type: "spring" as const, damping: 25, stiffness: 300 };
 
@@ -134,6 +135,16 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   // Segmented control
   const [kochenTab, setKochenTab] = useState<"rezepte" | "wochenplaner">("rezepte");
 
+  // ── Back-gesture handlers for drawers/modals ──────────────────────
+  useBackHandler(showAddSheet, () => setShowAddSheet(false));
+  useBackHandler(showUrlImport, () => { setShowUrlImport(false); setUrlInput(""); });
+  useBackHandler(showMealPicker, () => { setShowMealPicker(false); setMealPickerDate(null); });
+  useBackHandler(showFreetextInput, () => setShowFreetextInput(false));
+  useBackHandler(!!dayPopover, () => setDayPopover(null));
+  useBackHandler(showMoveSheet, () => setShowMoveSheet(false));
+  useBackHandler(showIngredientsModal, () => { setShowIngredientsModal(false); setIngredientsRecipe(null); });
+  useBackHandler(!!deleteConfirm, () => setDeleteConfirm(null));
+
   // ── Load data ──────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -247,6 +258,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   const openRecipeDetail = (id: string) => {
     setSelectedRecipeId(id);
     setActiveView("detail");
+    pushBack(() => { setActiveView("main"); setSelectedRecipeId(null); });
   };
 
   // Deep-link: open a specific recipe when the prop changes
@@ -260,6 +272,11 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   const openEditMode = (recipe: Recipe) => {
     setEditRecipe({ ...recipe, ingredients: [...recipe.ingredients], steps: [...recipe.steps], categories: [...recipe.categories] });
     setActiveView("edit");
+    pushBack(() => {
+      setEditRecipe(null);
+      if (selectedRecipeId) setActiveView("detail");
+      else setActiveView("main");
+    });
   };
 
   const saveEdit = async () => {
@@ -273,6 +290,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
     setSelectedRecipeId(editRecipe.id);
     setActiveView("detail");
     setEditRecipe(null);
+    popBack(); // remove edit history entry
     toast.success("Rezept gespeichert");
   };
 
@@ -408,6 +426,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
         setShowUrlImport(false);
         setShowAddSheet(false);
         setUrlInput("");
+        pushBack(() => { setEditRecipe(null); setActiveView("main"); });
         toast.success("Rezept importiert — bitte prüfen");
       }
     } catch (err: any) {
@@ -460,6 +479,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
     const updatedMeal = mealPlan.filter((e) => e.recipe_id !== id);
     await saveRecipes(updated);
     await saveMealPlan(updatedMeal);
+    popBack(); // pop detail history entry
     setActiveView("main");
     setSelectedRecipeId(null);
     toast.success("Rezept gelöscht");
@@ -482,7 +502,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
     return (
       <RecipeDetailView
         recipe={selectedRecipe}
-        onBack={() => { setActiveView("main"); setSelectedRecipeId(null); }}
+        onBack={() => { popBack(); setActiveView("main"); setSelectedRecipeId(null); }}
         onEdit={() => openEditMode(selectedRecipe)}
         onToggleFavorite={() => toggleFavorite(selectedRecipe.id)}
         onSetRating={(r) => setRating(selectedRecipe.id, r)}
@@ -513,6 +533,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
         onChange={setEditRecipe}
         onSave={saveEdit}
         onCancel={() => {
+          popBack(); // remove edit history entry
           setEditRecipe(null);
           if (selectedRecipeId) setActiveView("detail");
           else setActiveView("main");
@@ -1093,6 +1114,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
                   setEditRecipe(r);
                   setActiveView("edit");
                   setShowAddSheet(false);
+                  pushBack(() => { setEditRecipe(null); setActiveView("main"); });
                 }}
               >
                 <div className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center">
@@ -1228,6 +1250,7 @@ function RecipeDetailView({
   const [servings, setServings] = useState(recipe.servings || 4);
   const [comment, setComment] = useState(recipe.comment || "");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  useBackHandler(showDeleteConfirm, () => setShowDeleteConfirm(false));
   const scale = recipe.servings ? servings / recipe.servings : 1;
   const commentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1602,12 +1625,13 @@ function RecipeEditView({
           />
         </div>
 
-        {/* Time + Servings row — wrapped in form to suppress Chrome autofill toolbar on tel inputs */}
-        <form autoComplete="off" onSubmit={(e) => e.preventDefault()} className="grid grid-cols-3 gap-3 mt-3">
+        {/* Time + Servings row — type="search" suppresses Chrome toolbar, inputMode="numeric" keeps number keyboard */}
+        <div className="grid grid-cols-3 gap-3 mt-3">
           <div>
             <label className="text-xs text-text-3 mb-1 block">Vorbereit. (Min)</label>
             <input
-              type="tel"
+              type="search"
+              inputMode="numeric"
               name="recipe-prep-time"
               autoComplete="off"
               autoCorrect="off"
@@ -1624,7 +1648,8 @@ function RecipeEditView({
           <div>
             <label className="text-xs text-text-3 mb-1 block">Kochzeit (Min)</label>
             <input
-              type="tel"
+              type="search"
+              inputMode="numeric"
               name="recipe-cook-time"
               autoComplete="off"
               autoCorrect="off"
@@ -1641,7 +1666,8 @@ function RecipeEditView({
           <div>
             <label className="text-xs text-text-3 mb-1 block">Portionen</label>
             <input
-              type="tel"
+              type="search"
+              inputMode="numeric"
               name="recipe-servings"
               autoComplete="off"
               autoCorrect="off"
@@ -1655,7 +1681,7 @@ function RecipeEditView({
               className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
             />
           </div>
-        </form>
+        </div>
 
         {/* Categories */}
         <div className="mt-4">

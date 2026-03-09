@@ -67,6 +67,7 @@ import {
   useKvRealtime,
   markLocalWrite,
 } from "../use-kv-realtime";
+import { useBackHandler } from "../ui/use-back-handler";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface StoreSettingEntry {
@@ -1088,27 +1089,25 @@ function QuantityDrawer({
         </p>
 
         <div className="flex items-center gap-3">
-          {/* Quantity input — wrapped in form to suppress Chrome autofill toolbar on tel inputs */}
-          <form autoComplete="off" onSubmit={(e) => e.preventDefault()}>
-            <input
-              ref={inputRef}
-              type="tel"
-              inputMode="decimal"
-              name="qty-drawer-input"
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              data-lpignore="true"
-              data-1p-ignore="true"
-              data-form-type="other"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="w-20 h-11 rounded-[16px] text-center text-sm font-semibold text-text-1 bg-surface-2 focus:outline-none"
-              style={{ border: "1px solid var(--zu-border)" }}
-            />
-          </form>
+          {/* Quantity input — type="search" suppresses Chrome toolbar, inputMode="decimal" keeps numeric keyboard */}
+          <input
+            ref={inputRef}
+            type="search"
+            inputMode="decimal"
+            name="qty-drawer-input"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-lpignore="true"
+            data-1p-ignore="true"
+            data-form-type="other"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="w-20 h-11 rounded-[16px] text-center text-sm font-semibold text-text-1 bg-surface-2 focus:outline-none"
+            style={{ border: "1px solid var(--zu-border)" }}
+          />
 
           {/* Unit segmented control — prevent focus steal to keep keyboard open */}
           <div
@@ -3319,6 +3318,12 @@ export function EinkaufenScreen({
       items.find((i) => i.id === quantityDrawerItemId) ?? null,
     [items, quantityDrawerItemId],
   );
+
+  // ── Back-gesture handlers for drawers/modals ──────────────────
+  useBackHandler(!!quantityDrawerItemId, () => setQuantityDrawerItemId(null));
+  useBackHandler(showAddStore, () => setShowAddStore(false));
+  useBackHandler(!!popover, () => setPopover(null));
+  useBackHandler(!!categorySortStore, () => setCategorySortStore(null));
 
   const handleAddItem = useCallback(
     (name: string, category: string) => {

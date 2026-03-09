@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../supabase-client";
 import { useKvRealtime, markLocalWrite } from "../use-kv-realtime";
+import { useBackHandler } from "../ui/use-back-handler";
 import {
   DndContext,
   PointerSensor,
@@ -177,6 +178,12 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMobile = useIsMobile();
   const isTouch = useIsTouch();
+
+  // ── Back-gesture handlers for drawers/modals ──────────────────
+  useBackHandler(sidebarOpen, () => setSidebarOpen(false));
+  useBackHandler(!!contextMenu, () => setContextMenu(null));
+  useBackHandler(!!emojiPickerPageId, () => setEmojiPickerPageId(null));
+  useBackHandler(!!deleteConfirmPageId, () => setDeleteConfirmPageId(null));
 
   // ── Save helpers ───────────────────────────────────────────────
   const saveData = useCallback(async (p: Page[], c: PageContents) => {
