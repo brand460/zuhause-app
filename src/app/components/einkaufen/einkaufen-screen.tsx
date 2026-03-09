@@ -1593,7 +1593,7 @@ function AddItemBar({
 
   return (
     <>
-      <div className="bg-surface" style={{ borderTop: itemEditing ? "none" : "1px solid var(--zu-border)", display: itemEditing ? "none" : undefined, height: itemEditing ? 0 : undefined, overflow: itemEditing ? "hidden" : undefined, padding: itemEditing ? 0 : undefined, margin: itemEditing ? 0 : undefined }}>
+      <div className="bg-surface" style={{ borderTop: "1px solid var(--zu-border)" }}>
         {quickChips.length > 0 && (
           <div
             className="flex gap-2 px-4 pt-2.5 pb-1 overflow-x-auto scrollbar-hide"
@@ -3275,11 +3275,11 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
           left: 0,
           right: 0,
           zIndex: 100,
+          /* Wenn ein Artikelname inline bearbeitet wird, brauchen wir die
+             AddItemBar nicht – display:none entfernt sie komplett aus dem
+             Layout, und updateListBottom setzt barH=0, damit die Liste
+             direkt bis zur Tastatur reicht (kein weißer Platzhalter-Block). */
           display: isItemNameEditing ? "none" : undefined,
-          height: isItemNameEditing ? 0 : undefined,
-          overflow: isItemNameEditing ? "hidden" : undefined,
-          padding: isItemNameEditing ? 0 : undefined,
-          margin: isItemNameEditing ? 0 : undefined,
         }}
       >
         <AddItemBar
