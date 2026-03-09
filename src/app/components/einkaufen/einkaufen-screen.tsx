@@ -68,6 +68,7 @@ import {
   markLocalWrite,
 } from "../use-kv-realtime";
 import { useBackHandler } from "../ui/use-back-handler";
+import { useKeyboardHeight } from "./use-keyboard-height";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface StoreSettingEntry {
@@ -1010,11 +1011,11 @@ function QuantityDrawer({
     item.quantity.toString(),
   );
   const inputRef = useRef<HTMLInputElement>(null);
+  const kbHeight = useKeyboardHeight();
 
+  // Focus immediately so keyboard opens simultaneously with the drawer slide-up
   useEffect(() => {
-    // Focus input AFTER the 300ms slide-up animation completes
-    const t = setTimeout(() => inputRef.current?.focus(), 350);
-    return () => clearTimeout(t);
+    requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
 
   const handleUnitChange = (newUnit: UnitType) => {
@@ -1051,6 +1052,7 @@ function QuantityDrawer({
   return (
     <motion.div
       className="fixed inset-0 z-[1000] flex flex-col justify-end"
+      style={{ touchAction: "none" }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -1059,22 +1061,25 @@ function QuantityDrawer({
         damping: 25,
         stiffness: 300,
       }}
+      onTouchMove={(e) => e.preventDefault()}
     >
       <div
         className="absolute inset-0 bg-black/40"
         onClick={handleBackdropClick}
+        aria-hidden="true"
       />
       <motion.div
         className="relative bg-surface rounded-t-[20px] px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
-        style={{ height: 160, minHeight: 160 }}
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
+        style={{ overscrollBehavior: "contain" }}
+        initial={{ y: "100%", marginBottom: 0 }}
+        animate={{ y: 0, marginBottom: kbHeight }}
+        exit={{ y: "100%", marginBottom: 0 }}
         transition={{
           type: "spring",
           damping: 25,
           stiffness: 300,
         }}
+        onTouchMove={(e) => e.stopPropagation()}
       >
         {/* Drag handle */}
         <div className="flex justify-center mb-4">
