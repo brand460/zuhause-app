@@ -592,6 +592,26 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
     reloadAll,
   );
 
+  // ── Visibility / focus handlers for reconnection ──
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        console.log("[Kalender] App visible again, reloading data...");
+        reloadAll();
+      }
+    };
+    const handleFocus = () => {
+      console.log("[Kalender] Window focused, reloading data...");
+      reloadAll();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [reloadAll]);
+
   // ── Back-gesture handlers for drawers/modals ──────────────────
   useBackHandler(showEditor, () => { setShowEditor(false); setEditingEvent(null); });
   useBackHandler(showRecurringPrompt, () => { setShowRecurringPrompt(false); setPendingEdit(null); });

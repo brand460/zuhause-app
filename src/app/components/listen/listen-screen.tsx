@@ -299,6 +299,26 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
     useCallback(() => loadListenData(false), [loadListenData]),
   );
 
+  // ── Visibility / focus handlers for reconnection ──
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        console.log("[Listen] App visible again, reloading data...");
+        loadListenData(false);
+      }
+    };
+    const handleFocus = () => {
+      console.log("[Listen] Window focused, reloading data...");
+      loadListenData(false);
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [loadListenData]);
+
   // ── Page operations ────────────────────────────────────────────
   const updatePages = useCallback(
     (newPages: Page[]) => {
