@@ -161,7 +161,7 @@ const DEFAULT_CONTENTS: PageContents = Object.fromEntries(
 
 // ── Main Component ───────────────────────────────────────────────────
 
-export function ListenScreen() {
+export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}) {
   const [pages, setPages] = useState<Page[]>([]);
   const [pageContents, setPageContents] = useState<PageContents>({});
   const [activePageId, setActivePageId] = useState<string | null>(null);
@@ -278,6 +278,13 @@ export function ListenScreen() {
       localStorage.setItem(LS_LAST_PAGE_KEY, activePageId);
     }
   }, [activePageId, loaded]);
+
+  // ── Deep-link: open a specific page when the prop changes ──
+  useEffect(() => {
+    if (openPageId && loaded && pages.some((p) => p.id === openPageId)) {
+      setActivePageId(openPageId);
+    }
+  }, [openPageId, loaded, pages]);
 
   // ── Supabase Realtime subscription for live sync ──
   useKvRealtime(
@@ -580,10 +587,10 @@ export function ListenScreen() {
       {isMobile && sidebarOpen && (
         <>
           <div
-            className="fixed inset-0 bg-black/30 z-40"
+            className="fixed inset-0 bg-black/30 z-[999]"
             onClick={() => setSidebarOpen(false)}
           />
-          <div className="fixed inset-y-0 right-0 w-72 bg-surface z-50 flex flex-col" style={{ boxShadow: "var(--shadow-elevated)" }}>
+          <div className="fixed inset-y-0 right-0 w-72 bg-surface z-[1000] flex flex-col" style={{ boxShadow: "var(--shadow-elevated)" }}>
             <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--zu-border)" }}>
               <span className="text-sm font-bold text-text-1">Seiten</span>
               <button onClick={() => setSidebarOpen(false)} className="p-1 rounded-lg hover:bg-surface-2">
@@ -848,6 +855,10 @@ function SidebarContent(props: SidebarContentProps) {
   } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // ── History-state refs for Android swipe-back cancellation ──
+  const dragHistoryPushedRef = useRef(false);
+  const ignoringPopstateRef = useRef(false);
+
   // Flat list of all visible page IDs (tree order)
   const flatVisibleIds = useMemo(() => {
     const result: string[] = [];
@@ -877,6 +888,46 @@ function SidebarContent(props: SidebarContentProps) {
   onMovePageRef.current = onMovePage;
 
   // ── Touch long-press drag handlers ──
+
+  /** Cancels an in-progress drag without executing a drop. */
+  const cancelTouchDrag = useCallback(() => {
+    const state = touchDragRef.current;
+    if (state?.timerId) clearTimeout(state.timerId);
+    touchDragRef.current = null;
+    setDragActiveId(null);
+    setDragActiveWidth(0);
+    setDropPreview(null);
+    setDragOverTrash(false);
+    setTouchDragGhost(null);
+    touchDragEndTimeRef.current = Date.now();
+  }, []);
+
+  /** Clean up the history entry we pushed when drag activated. */
+  const cleanupDragHistory = useCallback(() => {
+    if (dragHistoryPushedRef.current) {
+      dragHistoryPushedRef.current = false;
+      ignoringPopstateRef.current = true;
+      history.back();
+    }
+  }, []);
+
+  // popstate listener — fires when user presses Android back / swipe-back
+  useEffect(() => {
+    const onPopState = () => {
+      if (ignoringPopstateRef.current) {
+        // This popstate was triggered by our own cleanupDragHistory — ignore it
+        ignoringPopstateRef.current = false;
+        return;
+      }
+      if (dragHistoryPushedRef.current) {
+        // User navigated back while drag was active → cancel drag
+        dragHistoryPushedRef.current = false;
+        cancelTouchDrag();
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [cancelTouchDrag]);
 
   const computeTouchDropPreview = useCallback((cursorY: number, cursorX: number, dragPageId: string): { preview: DropPreview | null; overTrash: boolean } => {
     // Check trash zone
@@ -948,6 +999,10 @@ function SidebarContent(props: SidebarContentProps) {
       touchDragRef.current.activated = true;
       try { navigator.vibrate?.(30); } catch (_) {}
 
+      // Push a dummy history entry so Android swipe-back cancels drag instead of closing the app/tab
+      history.pushState({ drag: true }, "");
+      dragHistoryPushedRef.current = true;
+
       setDragActiveId(pageId);
       setTouchDragGhost({
         x: startX, y: startY,
@@ -982,10 +1037,11 @@ function SidebarContent(props: SidebarContentProps) {
       setDragOverTrash(false);
       setTouchDragGhost(null);
       touchDragEndTimeRef.current = Date.now();
+      cleanupDragHistory();
     }
 
     touchDragRef.current = null;
-  }, [executeTouchDrop]);
+  }, [executeTouchDrop, cleanupDragHistory]);
 
   // Native touchmove listener with { passive: false } to allow preventDefault during drag
   useEffect(() => {
@@ -1018,10 +1074,11 @@ function SidebarContent(props: SidebarContentProps) {
       setDropPreview(preview);
       setDragOverTrash(overTrash);
     };
+
+    // touchend: execute the drop normally, then clean up history
     const endHandler = () => {
       const state = touchDragRef.current;
       if (!state || !state.activated) return;
-      // Same logic as handleRowTouchEnd
       executeTouchDrop(state.pageId, dropPreviewRef.current, dragOverTrashRef.current);
       setDragActiveId(null);
       setDragActiveWidth(0);
@@ -1030,14 +1087,43 @@ function SidebarContent(props: SidebarContentProps) {
       setTouchDragGhost(null);
       touchDragEndTimeRef.current = Date.now();
       touchDragRef.current = null;
+      // Remove the dummy history entry we pushed on drag activation
+      if (dragHistoryPushedRef.current) {
+        dragHistoryPushedRef.current = false;
+        ignoringPopstateRef.current = true;
+        history.back();
+      }
     };
+
+    // touchcancel (e.g. Android system gesture): cancel drag without executing drop
+    const cancelHandler = () => {
+      const state = touchDragRef.current;
+      if (!state) return;
+      if (state.timerId) clearTimeout(state.timerId);
+      if (state.activated) {
+        setDragActiveId(null);
+        setDragActiveWidth(0);
+        setDropPreview(null);
+        setDragOverTrash(false);
+        setTouchDragGhost(null);
+        touchDragEndTimeRef.current = Date.now();
+        // Remove the dummy history entry if we pushed one
+        if (dragHistoryPushedRef.current) {
+          dragHistoryPushedRef.current = false;
+          ignoringPopstateRef.current = true;
+          history.back();
+        }
+      }
+      touchDragRef.current = null;
+    };
+
     document.addEventListener("touchmove", handler, { passive: false });
     document.addEventListener("touchend", endHandler);
-    document.addEventListener("touchcancel", endHandler);
+    document.addEventListener("touchcancel", cancelHandler);
     return () => {
       document.removeEventListener("touchmove", handler);
       document.removeEventListener("touchend", endHandler);
-      document.removeEventListener("touchcancel", endHandler);
+      document.removeEventListener("touchcancel", cancelHandler);
     };
   }, [computeTouchDropPreview, executeTouchDrop]);
 
@@ -1585,10 +1671,41 @@ function PageTreeItem(props: PageTreeItemProps) {
 // ── Emoji Picker (emoji-mart) ─────────────────────────────────────────
 
 function EmojiPicker({ onSelect, onClose }: { onSelect: (emoji: string) => void; onClose: () => void }) {
+  const isDark = document.documentElement.dataset.theme === "dark";
+
+  // emoji-mart uses rgb(var(--em-rgb-*)) so values must be bare "R, G, B" triplets.
+  // We mirror our design tokens here so the picker always matches the app theme.
+  const emVars: React.CSSProperties = isDark
+    ? {
+        // Surfaces
+        ["--em-rgb-background" as any]: "40, 40, 37",    // --surface-2 dark
+        ["--em-rgb-input" as any]: "20, 20, 18",         // --zu-bg dark (darker than surface-2)
+        // Text
+        ["--em-rgb-color" as any]: "240, 240, 236",      // --text-1 dark
+        // Borders & focus ring (use border colour so ring is subtle, not blue)
+        ["--em-color-border" as any]: "var(--zu-border)",
+        ["--em-color-border-over" as any]: "#3A3A35",
+        ["--em-rgb-accent" as any]: "46, 46, 42",        // --zu-border dark as RGB → no blue ring
+      }
+    : {
+        // Surfaces
+        ["--em-rgb-background" as any]: "240, 240, 237", // --surface-2 light
+        ["--em-rgb-input" as any]: "247, 247, 245",      // --zu-bg light (slightly darker than surface-2)
+        // Text
+        ["--em-rgb-color" as any]: "26, 26, 24",         // --text-1 light
+        // Borders & focus ring
+        ["--em-color-border" as any]: "var(--zu-border)",
+        ["--em-color-border-over" as any]: "#D0D0CA",
+        ["--em-rgb-accent" as any]: "232, 232, 227",     // --zu-border light as RGB → no blue ring
+      };
+
   return (
     <div className="contents">
       <div className="fixed inset-0 z-[80]" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[85]">
+      <div
+        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[85]"
+        style={emVars}
+      >
         <Picker
           data={data}
           onEmojiSelect={(emoji: any) => {
@@ -1596,7 +1713,7 @@ function EmojiPicker({ onSelect, onClose }: { onSelect: (emoji: string) => void;
             onClose();
           }}
           locale="de"
-          theme="light"
+          theme={isDark ? "dark" : "light"}
           previewPosition="none"
           skinTonePosition="none"
         />

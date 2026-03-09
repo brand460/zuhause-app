@@ -9,6 +9,10 @@ import { AppContent } from "./components/app-content";
     const saved = localStorage.getItem("theme");
     if (saved === "dark") {
       document.documentElement.setAttribute("data-theme", "dark");
+      // Sofort korrekte theme-color setzen — verhindert weißen Flash
+      // der Gestenleiste beim App-Start im Dark-Mode
+      const meta = document.querySelector('meta[name="theme-color"]') as HTMLMetaElement | null;
+      if (meta) meta.content = "#1E1E1B";
     }
   } catch (_) {
     // localStorage not available
@@ -36,7 +40,7 @@ export default function App() {
       <Helmet>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, interactive-widget=resizes-visual" />
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#6FBD85" />
+        <meta name="theme-color" content="#ffffff" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         <meta name="apple-mobile-web-app-title" content="Zuhause" />

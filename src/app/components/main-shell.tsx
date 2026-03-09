@@ -1,27 +1,35 @@
 import React, { useState, useEffect, useRef } from "react";
 // DEV MODE: auth import removed temporarily
-import { Calendar, ShoppingCart, FileText, ChefHat, Menu } from "lucide-react";
+import {
+  Calendar,
+  ShoppingCart,
+  Notepad,
+  CookingPot,
+  List,
+} from "phosphor-react";
+import { FileText, ChefHat } from "lucide-react";
 import { Toaster } from "sonner";
 import { EinkaufenScreen } from "./einkaufen/einkaufen-screen";
 import { KalenderScreen } from "./kalender/kalender-screen";
 import { MehrScreen } from "./mehr-screen";
 import { ListenScreen } from "./listen/listen-screen";
 import { KochenScreen } from "./kochen/kochen-screen";
+import { ThemeColorProvider } from "./ui/theme-color-context";
 
 type TabId = "kalender" | "einkaufen" | "listen" | "kochen" | "mehr";
 
 interface Tab {
   id: TabId;
   label: string;
-  icon: React.ElementType;
+  PhosphorIcon: React.ElementType;
 }
 
 const tabs: Tab[] = [
-  { id: "kalender", label: "Kalender", icon: Calendar },
-  { id: "einkaufen", label: "Einkaufen", icon: ShoppingCart },
-  { id: "listen", label: "Notizen", icon: FileText },
-  { id: "kochen", label: "Kochen", icon: ChefHat },
-  { id: "mehr", label: "Menü", icon: Menu },
+  { id: "einkaufen", label: "Einkaufen", PhosphorIcon: ShoppingCart },
+  { id: "kalender", label: "Kalender", PhosphorIcon: Calendar },
+  { id: "listen", label: "Notizen", PhosphorIcon: Notepad },
+  { id: "kochen", label: "Kochen", PhosphorIcon: CookingPot },
+  { id: "mehr", label: "Menü", PhosphorIcon: List },
 ];
 
 function PlaceholderScreen({ title }: { title: string }) {
@@ -93,6 +101,10 @@ export function MainShell() {
   const [einkaufenCount, setEinkaufenCount] = useState(0);
   const stableHeight = useStableViewportHeight();
 
+  // Deep-link targets from Kalender navigation
+  const [deepLinkRecipeId, setDeepLinkRecipeId] = useState<string | null>(null);
+  const [deepLinkPageId, setDeepLinkPageId] = useState<string | null>(null);
+
   // Track which tabs have been visited — only mount their component once visited
   const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(new Set(["einkaufen"]));
 
@@ -106,90 +118,101 @@ export function MainShell() {
     });
   };
 
+  const handleNavigate = (tab: string, itemId?: string | null) => {
+    handleTabChange(tab as TabId);
+    if (tab === "kochen" && itemId) setDeepLinkRecipeId(itemId);
+    if (tab === "listen" && itemId) setDeepLinkPageId(itemId);
+  };
+
   return (
-    <div
-      className="flex flex-col overflow-hidden font-sans"
-      style={{ height: stableHeight, position: "fixed", top: 0, left: 0, right: 0, background: "var(--zu-bg)" }}
-    >
-      <Toaster position="top-center" richColors />
+    <ThemeColorProvider>
+      <div
+        className="flex flex-col overflow-hidden font-sans"
+        style={{ height: stableHeight, position: "fixed", top: 0, left: 0, right: 0, background: "var(--zu-bg)" }}
+      >
+        <Toaster position="top-center" richColors />
 
-      {/* Content — tabs are lazy-mounted on first visit, then kept alive via CSS hidden */}
-      <div className="flex-1 min-h-0 flex flex-col relative">
-        {visitedTabs.has("kalender") && (
-          <div className={`absolute inset-0 flex flex-col ${activeTab === "kalender" ? "" : "hidden"}`}>
-            <KalenderScreen />
-          </div>
-        )}
-        {visitedTabs.has("einkaufen") && (
-          <div className={`absolute inset-0 flex flex-col ${activeTab === "einkaufen" ? "" : "hidden"}`}>
-            <EinkaufenScreen onItemCountChange={setEinkaufenCount} />
-          </div>
-        )}
-        {visitedTabs.has("listen") && (
-          <div className={`absolute inset-0 flex flex-col ${activeTab === "listen" ? "" : "hidden"}`}>
-            <ListenScreen />
-          </div>
-        )}
-        {visitedTabs.has("kochen") && (
-          <div className={`absolute inset-0 flex flex-col ${activeTab === "kochen" ? "" : "hidden"}`}>
-            <KochenScreen />
-          </div>
-        )}
-        {visitedTabs.has("mehr") && (
-          <div className={`absolute inset-0 flex flex-col ${activeTab === "mehr" ? "" : "hidden"}`}>
-            <MehrScreen onSignOut={signOut} />
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Navigation */}
-      <nav className="flex-shrink-0 bg-surface pb-[env(safe-area-inset-bottom)]" style={{ borderTop: "1px solid var(--zu-border)" }}>
-        <div className="flex items-center justify-around px-2 pt-2 pb-2">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id;
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className="relative flex items-center justify-center w-12 h-12 transition"
-                style={{
-                  color: isActive ? "var(--color-accent)" : "var(--color-text-2)",
-                }}
-              >
-                {isActive && (
-                  <div
-                    className="absolute rounded-full"
-                    style={{
-                      background: "var(--color-accent)",
-                      opacity: 0.15,
-                      top: "50%",
-                      left: "50%",
-                      transform: "translate(-50%, -50%)",
-                      padding: "4px 14px",
-                      minWidth: 44,
-                      minHeight: 32,
-                    }}
-                  />
-                )}
-                <Icon className="w-5 h-5 relative z-10" strokeWidth={isActive ? 2.5 : 1.5} />
-                {tab.id === "einkaufen" && einkaufenCount > 0 && (
-                  <span
-                    className="absolute z-10 rounded-full"
-                    style={{
-                      width: 8,
-                      height: 8,
-                      background: "var(--color-accent)",
-                      top: 8,
-                      right: 8,
-                    }}
-                  />
-                )}
-              </button>
-            );
-          })}
+        {/* Content — tabs are lazy-mounted on first visit, then kept alive via CSS hidden */}
+        <div className="flex-1 min-h-0 flex flex-col relative">
+          {visitedTabs.has("kalender") && (
+            <div className={`absolute inset-0 flex flex-col overflow-hidden ${activeTab === "kalender" ? "" : "hidden"}`}>
+              <KalenderScreen onNavigate={handleNavigate} />
+            </div>
+          )}
+          {visitedTabs.has("einkaufen") && (
+            <div className={`absolute inset-0 flex flex-col overflow-hidden ${activeTab === "einkaufen" ? "" : "hidden"}`}>
+              <EinkaufenScreen onItemCountChange={setEinkaufenCount} />
+            </div>
+          )}
+          {visitedTabs.has("listen") && (
+            <div className={`absolute inset-0 flex flex-col overflow-hidden ${activeTab === "listen" ? "" : "hidden"}`}>
+              <ListenScreen openPageId={deepLinkPageId} />
+            </div>
+          )}
+          {visitedTabs.has("kochen") && (
+            <div className={`absolute inset-0 flex flex-col overflow-hidden ${activeTab === "kochen" ? "" : "hidden"}`}>
+              <KochenScreen openRecipeId={deepLinkRecipeId} />
+            </div>
+          )}
+          {visitedTabs.has("mehr") && (
+            <div className={`absolute inset-0 flex flex-col overflow-hidden ${activeTab === "mehr" ? "" : "hidden"}`}>
+              <MehrScreen onSignOut={signOut} />
+            </div>
+          )}
         </div>
-      </nav>
-    </div>
+
+        {/* Bottom Navigation */}
+        <nav className="flex-shrink-0 bg-surface pb-[env(safe-area-inset-bottom)]" style={{ borderTop: "1px solid var(--zu-border)" }}>
+          <div className="flex items-center justify-around px-2 pt-2 pb-2">
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const { PhosphorIcon } = tab;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabChange(tab.id)}
+                  className="relative flex items-center justify-center w-12 h-12 transition"
+                >
+                  {isActive && (
+                    <div
+                      className="absolute rounded-full"
+                      style={{
+                        background: "var(--color-accent)",
+                        opacity: 0.15,
+                        top: "50%",
+                        left: "50%",
+                        transform: "translate(-50%, -50%)",
+                        padding: "4px 14px",
+                        minWidth: 44,
+                        minHeight: 32,
+                      }}
+                    />
+                  )}
+                  <PhosphorIcon
+                    size={24}
+                    weight={isActive ? "fill" : "regular"}
+                    color={isActive ? "var(--color-accent)" : "var(--color-text-3)"}
+                    className="relative z-10"
+                  />
+                  {tab.id === "einkaufen" && einkaufenCount > 0 && (
+                    <span
+                      className="absolute z-10"
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "var(--color-accent)",
+                        top: 8,
+                        right: 8,
+                      }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      </div>
+    </ThemeColorProvider>
   );
 }

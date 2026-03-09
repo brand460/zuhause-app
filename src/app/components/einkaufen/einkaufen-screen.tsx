@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Plus,
@@ -215,7 +216,7 @@ function StoreLogo({
         height: size,
         backgroundColor: isAlleStore ? "var(--color-surface-2)" : (showLogo ? "var(--color-surface-2)" : (imgError ? "var(--color-surface-2)" : store.bgColor)),
         border: isSelected ? "2.5px solid var(--color-accent)" : "2.5px solid transparent",
-        opacity: isSelected ? 1 : 0.45,
+        opacity: 1,
       }}
     >
       {isAlleStore ? (
@@ -506,7 +507,7 @@ function StorePopover({
   ];
 
   return (
-    <div className="fixed inset-0 z-50" style={{ pointerEvents: "none" }}>
+    <div className="fixed inset-0 z-[1000]" style={{ pointerEvents: "none" }}>
       <motion.div
         ref={popoverRef}
         initial={{ opacity: 0, scale: 0.9, y: -4 }}
@@ -763,11 +764,11 @@ function QuantityDrawer({
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex flex-col justify-end"
+      className="fixed inset-0 z-[1000] flex flex-col justify-end"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
+      transition={{ type: "spring", damping: 25, stiffness: 300 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={handleBackdropClick} />
       <motion.div
@@ -776,7 +777,7 @@ function QuantityDrawer({
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
-        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
       >
         {/* Drag handle */}
         <div className="flex justify-center mb-4">
@@ -842,6 +843,7 @@ function SortableShoppingItem({
   onNameChange,
   animatingCheckId,
   isTransferDragging,
+  onEditingChange,
 }: {
   item: ShoppingItem;
   onToggle: () => void;
@@ -850,6 +852,7 @@ function SortableShoppingItem({
   onNameChange: (newName: string) => void;
   animatingCheckId: string | null;
   isTransferDragging?: boolean;
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const {
     attributes,
@@ -895,7 +898,8 @@ function SortableShoppingItem({
       onNameChange(trimmed);
     }
     setIsEditingName(false);
-  }, [editNameValue, item.name, onNameChange]);
+    onEditingChange?.(false);
+  }, [editNameValue, item.name, onNameChange, onEditingChange]);
 
   const handleNameKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
@@ -905,8 +909,9 @@ function SortableShoppingItem({
     if (e.key === "Escape") {
       setEditNameValue(item.name);
       setIsEditingName(false);
+      onEditingChange?.(false);
     }
-  }, [handleNameSave, item.name]);
+  }, [handleNameSave, item.name, onEditingChange]);
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -946,9 +951,7 @@ function SortableShoppingItem({
             ? "shadow-xl rounded-[16px] scale-[1.08] opacity-95 bg-surface ring-2 ring-accent-mid"
             : isDragging
               ? "rounded-[16px] scale-[1.02] opacity-95 bg-surface"
-              : phase === "flash"
-                ? "bg-green-50"
-                : ""
+              : ""
         }`}
         style={
           phase === "flyout"
@@ -958,7 +961,7 @@ function SortableShoppingItem({
                 transition: "transform 400ms ease-in, opacity 400ms ease-in",
               }
             : phase === "flash"
-              ? { transition: "background-color 150ms ease-in" }
+              ? { backgroundColor: "var(--accent-light)", transition: "background-color 150ms ease-in" }
               : undefined
         }
       >
@@ -1007,6 +1010,7 @@ function SortableShoppingItem({
                 e.stopPropagation();
                 setEditNameValue(item.name);
                 setIsEditingName(true);
+                onEditingChange?.(true);
               }}
               className={`text-sm leading-tight truncate cursor-text ${
                 item.is_checked
@@ -1233,17 +1237,17 @@ function CategorySortModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
+      className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/40"
       style={{ touchAction: "none" }}
       onClick={onClose}
     >
       <motion.div
-        initial={{ y: 300 }}
+        initial={{ y: "100%" }}
         animate={{ y: 0 }}
-        exit={{ y: 300 }}
-        transition={{ type: "spring", damping: 28, stiffness: 300 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm bg-surface rounded-t-[20px] flex flex-col max-h-[80vh]"
+        className="w-full bg-surface rounded-t-[20px] flex flex-col max-h-[80vh]"
         style={{ boxShadow: "var(--shadow-elevated)" }}
       >
         {/* Handle bar */}
@@ -1301,14 +1305,18 @@ function CategorySortModal({
                     key={chip}
                     onClick={() => handleAddCategory(chip)}
                     onMouseDown={(e) => e.preventDefault()}
-                    className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium hover:scale-105 active:scale-95 transition whitespace-nowrap bg-surface-2"
-                    style={{ color: colors.text }}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap"
+                    style={{
+                      background: "var(--surface-2)",
+                      border: "1px solid var(--zu-border)",
+                    }}
                   >
+                    <span style={{ color: "var(--text-2)" }}>+</span>
                     <span
                       className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{ backgroundColor: colors.dot }}
                     />
-                    + {chip}
+                    <span style={{ color: colors.text }}>{chip}</span>
                   </button>
                 );
               })}
@@ -1503,6 +1511,7 @@ function AddItemBar({
   customTemplates,
   onAdd,
   categoryOrder,
+  itemEditing,
 }: {
   storeId: string;
   stores: StoreInfo[];
@@ -1510,6 +1519,7 @@ function AddItemBar({
   customTemplates: GroceryTemplate[];
   onAdd: (name: string, category: string) => void;
   categoryOrder: string[];
+  itemEditing?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -1583,7 +1593,7 @@ function AddItemBar({
 
   return (
     <>
-      <div className="bg-surface" style={{ borderTop: "1px solid var(--zu-border)" }}>
+      <div className="bg-surface" style={{ borderTop: "1px solid var(--zu-border)", display: itemEditing ? "none" : undefined }}>
         {quickChips.length > 0 && (
           <div
             className="flex gap-2 px-4 pt-2.5 pb-1 overflow-x-auto scrollbar-hide"
@@ -1598,22 +1608,33 @@ function AddItemBar({
               overflow: query.length > 0 ? "hidden" : undefined,
             }}
           >
-            {quickChips.map((chip) => (
-              <button
-                key={chip}
-                onPointerDown={(e) => e.preventDefault()}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleSelect(chip)}
-                className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition whitespace-nowrap"
-                style={{
-                  background: "var(--surface-2)",
-                  color: "var(--text-2)",
-                  border: "1px solid var(--zu-border)",
-                }}
-              >
-                + {chip}
-              </button>
-            ))}
+            {quickChips.map((chip) => {
+              const template = findGroceryTemplate(chip, customTemplates);
+              const colors = template
+                ? getCategoryChipColor(template.category)
+                : getCategoryChipColor("Sonstiges");
+              return (
+                <button
+                  key={chip}
+                  onPointerDown={(e) => e.preventDefault()}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleSelect(chip)}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition whitespace-nowrap"
+                  style={{
+                    background: "var(--surface-2)",
+                    color: "var(--text-2)",
+                    border: "1px solid var(--zu-border)",
+                  }}
+                >
+                  <span>+</span>
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: colors.dot }}
+                  />
+                  {chip}
+                </button>
+              );
+            })}
           </div>
         )}
         <AnimatePresence>
@@ -1773,27 +1794,28 @@ function CategoryPickerModal({
     return categories.filter((c) => c.toLowerCase().includes(q));
   }, [categories, filterQuery]);
 
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/40"
-      style={{ touchAction: "none" }}
+      className="fixed inset-0 bg-black/40"
+      style={{ touchAction: "none", zIndex: 9999 }}
       onClick={onClose}
     >
       <motion.div
-        initial={{ y: 300 }}
+        initial={{ y: "100%" }}
         animate={{ y: 0 }}
-        exit={{ y: 300 }}
-        transition={{ type: "spring", damping: 28, stiffness: 300 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
         onClick={(e) => e.stopPropagation()}
-        className="fixed left-0 right-0 mx-auto w-full max-w-sm bg-surface rounded-t-[20px] flex flex-col"
+        className="fixed left-0 right-0 w-full bg-surface rounded-t-[20px] flex flex-col"
         style={{
           bottom: bottomOffset,
           height: "40vh",
           maxHeight: `calc(100vh - ${bottomOffset}px - 40px)`,
           boxShadow: "var(--shadow-elevated)",
+          zIndex: 9999,
         }}
       >
         {/* Handle bar */}
@@ -1857,7 +1879,8 @@ function CategoryPickerModal({
           </div>
         </div>
       </motion.div>
-    </motion.div>
+    </motion.div>,
+    document.body
   );
 }
 
@@ -1934,16 +1957,16 @@ function AddStoreModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-black/40"
+      className="fixed inset-0 z-[1000] bg-black/40"
       onClick={onClose}
     >
       <motion.div
-        initial={{ y: 300 }}
+        initial={{ y: "100%" }}
         animate={{ y: 0 }}
-        exit={{ y: 300 }}
-        transition={{ type: "spring", damping: 28, stiffness: 300 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
         onClick={(e) => e.stopPropagation()}
-        className="fixed left-0 right-0 mx-auto w-full max-w-sm bg-surface rounded-t-[20px] flex flex-col"
+        className="fixed left-0 right-0 w-full bg-surface rounded-t-[20px] flex flex-col"
         style={{
           bottom: bottomOffset,
           height: "60vh",
@@ -2090,6 +2113,8 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [stores, setStores] = useState<StoreInfo[]>(DEFAULT_STORES);
   const [storeSettings, setStoreSettings] = useState<StoreSettingEntry[]>([]);
+  // Track when any item name is being edited inline → hide AddItemBar
+  const [isItemNameEditing, setIsItemNameEditing] = useState(false);
   const [selectedStore, setSelectedStore] = useState("aldi");
   const [showAddStore, setShowAddStore] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -3003,7 +3028,7 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
   }, [storeSettings]);
 
   // Measure the bottom bar height for scroll area padding
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!bottomBarRef.current) return;
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -3121,6 +3146,7 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
                     onNameChange={(newName) =>
                       handleNameChange(item.id, newName)
                     }
+                    onEditingChange={setIsItemNameEditing}
                     animatingCheckId={animatingCheckId}
                     isTransferDragging={storeTransferActive && activeDragId === item.id}
                   />
@@ -3166,6 +3192,7 @@ export function EinkaufenScreen({ onItemCountChange }: { onItemCountChange?: (co
           customTemplates={customTemplates}
           onAdd={handleAddItem}
           categoryOrder={currentCategoryOrder}
+          itemEditing={isItemNameEditing}
         />
       </div>
 

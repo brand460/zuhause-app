@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Plus, Search, Heart, Clock, ChevronLeft, Star, Minus, ExternalLink,
   Pencil, X, Loader2, Link2, FileText, Camera, Trash2, ArrowRightLeft, RefreshCw,
@@ -11,6 +12,8 @@ import type {
   Recipe, MealPlanEntry, Ingredient, RecipeStep, CategoryFilter,
 } from "./kochen-types";
 import { HOUSEHOLD_ID, RECIPE_CATEGORIES } from "./kochen-types";
+
+const DRAWER_SPRING = { type: "spring" as const, damping: 25, stiffness: 300 };
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -81,7 +84,7 @@ function emptyRecipe(): Recipe {
 // MAIN KOCHEN SCREEN
 // ══════════════════════════════════════════════════════════════════════
 
-export function KochenScreen() {
+export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } = {}) {
   // ── State ──────────────────────────────────────────────────────────
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [mealPlan, setMealPlan] = useState<MealPlanEntry[]>([]);
@@ -245,6 +248,14 @@ export function KochenScreen() {
     setSelectedRecipeId(id);
     setActiveView("detail");
   };
+
+  // Deep-link: open a specific recipe when the prop changes
+  useEffect(() => {
+    if (openRecipeId && !loading) {
+      openRecipeDetail(openRecipeId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRecipeId, loading]);
 
   const openEditMode = (recipe: Recipe) => {
     setEditRecipe({ ...recipe, ingredients: [...recipe.ingredients], steps: [...recipe.steps], categories: [...recipe.categories] });
@@ -757,9 +768,9 @@ export function KochenScreen() {
       {/* Day Popover */}
       {dayPopover && (
         <div className="contents">
-          <div className="fixed inset-0 z-50" onClick={() => setDayPopover(null)} />
+          <div className="fixed inset-0 z-[1000]" onClick={() => setDayPopover(null)} />
           <div
-            className="fixed z-50 rounded-xl py-2 min-w-[200px]"
+            className="fixed z-[1000] rounded-xl py-2 min-w-[200px]"
             style={{
               top: Math.min(dayPopover.y, window.innerHeight - 200),
               left: Math.min(dayPopover.x, window.innerWidth - 220),
@@ -801,81 +812,124 @@ export function KochenScreen() {
       )}
 
       {/* Delete Confirmation */}
-      {deleteConfirm && (
-        <div className="contents">
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={() => setDeleteConfirm(null)}>
-            <div className="rounded-2xl p-6 mx-6 max-w-sm w-full" style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }} onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-base font-semibold text-text-1 mb-2">Eintrag löschen?</h3>
-              <p className="text-sm text-text-3 mb-5">Der Wochenplan-Eintrag wird entfernt.</p>
+      <AnimatePresence>
+        {deleteConfirm && (
+          <motion.div
+            className="fixed inset-0 z-[999] flex items-end"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={DRAWER_SPRING}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => setDeleteConfirm(null)} />
+            <motion.div
+              className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+              style={{ boxShadow: "var(--shadow-elevated)" }}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={DRAWER_SPRING}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+              </div>
+              <h3 className="text-base font-semibold text-text-1 text-center mb-2">Eintrag löschen?</h3>
+              <p className="text-sm text-text-3 text-center mb-5">Der Wochenplan-Eintrag wird entfernt.</p>
               <div className="flex gap-3">
                 <button
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface-2 text-text-2"
+                  className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-surface-2 text-text-2"
                   onClick={() => setDeleteConfirm(null)}
                 >
                   Abbrechen
                 </button>
                 <button
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-danger text-white"
+                  className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-danger text-white"
                   onClick={() => deleteMealEntry(deleteConfirm)}
                 >
                   Löschen
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Move Sheet */}
-      {showMoveSheet && moveSourceDate && (
-        <div className="contents">
-          <div className="fixed inset-0 bg-black/40 z-50" onClick={() => { setShowMoveSheet(false); setMoveSourceDate(null); }} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl pb-[env(safe-area-inset-bottom)] max-h-[50vh]" style={{ background: 'var(--surface)' }}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <h3 className="text-base font-semibold">Verschieben nach</h3>
-              <button onClick={() => { setShowMoveSheet(false); setMoveSourceDate(null); }}>
-                <X className="w-5 h-5 text-text-3" />
-              </button>
-            </div>
-            <div className="flex gap-3 overflow-x-auto px-4 py-4">
-              {days.map((d) => {
-                const dateStr = fmtDate(d);
-                const occupied = mealByDate.has(dateStr);
-                const isSrc = dateStr === moveSourceDate;
-                return (
-                  <button
-                    key={dateStr}
-                    disabled={occupied || isSrc}
-                    onClick={() => moveMealEntry(moveSourceDate, dateStr)}
-                    className={`flex-shrink-0 w-16 h-16 rounded-xl flex flex-col items-center justify-center text-xs font-medium transition ${
-                      isSrc
-                        ? "bg-accent-light text-accent border-2 border-accent-mid"
-                        : occupied
-                          ? "bg-surface-2 text-text-3"
-                          : "bg-surface-2 text-text-2 hover:bg-accent-light hover:text-accent"
-                    }`}
-                  >
-                    <span className="font-bold">{dayLabel(d)}</span>
-                    <span>{dateNum(d)}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {showMoveSheet && moveSourceDate && (
+          <motion.div
+            className="fixed inset-0 z-[999] flex items-end"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={DRAWER_SPRING}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => { setShowMoveSheet(false); setMoveSourceDate(null); }} />
+            <motion.div
+              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] max-h-[50vh]"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={DRAWER_SPRING}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+              </div>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                <h3 className="text-base font-semibold">Verschieben nach</h3>
+                <button onClick={() => { setShowMoveSheet(false); setMoveSourceDate(null); }}>
+                  <X className="w-5 h-5 text-text-3" />
+                </button>
+              </div>
+              <div className="flex gap-3 overflow-x-auto px-4 py-4">
+                {days.map((d) => {
+                  const dateStr = fmtDate(d);
+                  const occupied = mealByDate.has(dateStr);
+                  const isSrc = dateStr === moveSourceDate;
+                  return (
+                    <button
+                      key={dateStr}
+                      disabled={occupied || isSrc}
+                      onClick={() => moveMealEntry(moveSourceDate, dateStr)}
+                      className={`flex-shrink-0 w-16 h-16 rounded-xl flex flex-col items-center justify-center text-xs font-medium transition ${
+                        isSrc
+                          ? "bg-accent-light text-accent border-2 border-accent-mid"
+                          : occupied
+                            ? "bg-surface-2 text-text-3"
+                            : "bg-surface-2 text-text-2 hover:bg-accent-light hover:text-accent"
+                      }`}
+                    >
+                      <span className="font-bold">{dayLabel(d)}</span>
+                      <span>{dateNum(d)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Meal Picker (Rezept auswählen) */}
-      {showMealPicker && mealPickerDate && (
-        <div className="contents">
-          <div className="fixed inset-0 bg-black/40 z-50" onClick={() => { setShowMealPicker(false); setMealPickerDate(null); setMealPickerSearch(""); }} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl pb-[env(safe-area-inset-bottom)] max-h-[70vh] flex flex-col" style={{ background: 'var(--surface)' }}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <h3 className="text-base font-semibold">Was gibt's zu essen?</h3>
-              <button onClick={() => { setShowMealPicker(false); setMealPickerDate(null); setMealPickerSearch(""); }}>
-                <X className="w-5 h-5 text-text-3" />
-              </button>
-            </div>
+      <AnimatePresence>
+        {showMealPicker && mealPickerDate && (
+          <motion.div
+            className="fixed inset-0 z-[999] flex items-end"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={DRAWER_SPRING}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => { setShowMealPicker(false); setMealPickerDate(null); setMealPickerSearch(""); }} />
+            <motion.div
+              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] max-h-[70vh] flex flex-col"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={DRAWER_SPRING}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+                <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+              </div>
+              <div className="flex items-center justify-between px-4 py-2 border-b border-border flex-shrink-0">
+                <h3 className="text-base font-semibold">Was gibt's zu essen?</h3>
+                <button onClick={() => { setShowMealPicker(false); setMealPickerDate(null); setMealPickerSearch(""); }}>
+                  <X className="w-5 h-5 text-text-3" />
+                </button>
+              </div>
             {/* Options */}
             <div className="flex gap-2 px-4 py-3">
               <button
@@ -941,16 +995,31 @@ export function KochenScreen() {
                 <p className="text-center text-text-3 text-sm py-8">Noch keine Rezepte im Kochbuch</p>
               )}
             </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Freetext Input */}
-      {showFreetextInput && mealPickerDate && (
-        <div className="contents">
-          <div className="fixed inset-0 bg-black/40 z-50" onClick={() => { setShowFreetextInput(false); setFreetextValue(""); setMealPickerDate(null); }} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl pb-[env(safe-area-inset-bottom)] p-4" style={{ background: 'var(--surface)' }}>
-            <h3 className="text-base font-semibold mb-3">Freitext-Eintrag</h3>
+      <AnimatePresence>
+        {showFreetextInput && mealPickerDate && (
+          <motion.div
+            className="fixed inset-0 z-[999] flex items-end"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={DRAWER_SPRING}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => { setShowFreetextInput(false); setFreetextValue(""); setMealPickerDate(null); }} />
+            <motion.div
+              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={DRAWER_SPRING}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+              </div>
+              <h3 className="text-base font-semibold mb-3">Freitext-Eintrag</h3>
             <input
               type="text"
               autoComplete="off"
@@ -973,18 +1042,32 @@ export function KochenScreen() {
             >
               Speichern
             </button>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Add Recipe Bottom Sheet */}
-      {showAddSheet && (
-        <div className="contents">
-          <div className="fixed inset-0 bg-black/40 z-50" onClick={() => setShowAddSheet(false)} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl pb-[env(safe-area-inset-bottom)] p-4" style={{ background: 'var(--surface)' }}>
-            <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ background: 'var(--zu-border)' }} />
-            <h3 className="text-base font-semibold mb-3">Rezept hinzufügen</h3>
-            <div className="flex flex-col gap-2">
+      <AnimatePresence>
+        {showAddSheet && (
+          <motion.div
+            className="fixed inset-0 z-[999] flex items-end"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={DRAWER_SPRING}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowAddSheet(false)} />
+            <motion.div
+              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={DRAWER_SPRING}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div className="w-9 h-1 rounded-full" style={{ background: 'var(--zu-border)' }} />
+              </div>
+              <h3 className="text-base font-semibold mb-3">Rezept hinzufügen</h3>
+              <div className="flex flex-col gap-2">
               <button
                 className="flex items-center gap-3 p-3 rounded-xl bg-surface-2 hover:bg-accent-light transition text-left"
                 onClick={() => { setShowAddSheet(false); setShowUrlImport(true); }}
@@ -1026,17 +1109,32 @@ export function KochenScreen() {
                   <p className="text-xs text-text-3">Rezept aus einem Foto extrahieren</p>
                 </div>
               </button>
-            </div>
-          </div>
-        </div>
-      )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* URL Import Modal */}
-      {showUrlImport && (
-        <div className="contents">
-          <div className="fixed inset-0 bg-black/40 z-50" onClick={() => { setShowUrlImport(false); setUrlInput(""); }} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl pb-[env(safe-area-inset-bottom)] p-4" style={{ background: 'var(--surface)' }}>
-            <h3 className="text-base font-semibold mb-3">URL importieren</h3>
+      <AnimatePresence>
+        {showUrlImport && (
+          <motion.div
+            className="fixed inset-0 z-[999] flex items-end"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={DRAWER_SPRING}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => { setShowUrlImport(false); setUrlInput(""); }} />
+            <motion.div
+              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={DRAWER_SPRING}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div className="w-9 h-1 rounded-full" style={{ background: 'var(--zu-border)' }} />
+              </div>
+              <h3 className="text-base font-semibold mb-3">URL importieren</h3>
             <input
               type="url"
               autoComplete="off"
@@ -1067,27 +1165,30 @@ export function KochenScreen() {
                 "Importieren"
               )}
             </button>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Ingredients Transfer Modal */}
-      {showIngredientsModal && ingredientsRecipe && (
-        <IngredientsModal
-          recipe={ingredientsRecipe}
-          selected={selectedIngredients}
-          onToggle={(i) => {
-            const next = [...selectedIngredients];
-            next[i] = !next[i];
-            setSelectedIngredients(next);
-          }}
-          store={ingredientStore}
-          onStoreChange={setIngredientStore}
-          stores={stores}
-          onAdd={addIngredientsToShopping}
-          onSkip={() => { setShowIngredientsModal(false); setIngredientsRecipe(null); }}
-        />
-      )}
+      <AnimatePresence>
+        {showIngredientsModal && ingredientsRecipe && (
+          <IngredientsModal
+            recipe={ingredientsRecipe}
+            selected={selectedIngredients}
+            onToggle={(i) => {
+              const next = [...selectedIngredients];
+              next[i] = !next[i];
+              setSelectedIngredients(next);
+            }}
+            store={ingredientStore}
+            onStoreChange={setIngredientStore}
+            stores={stores}
+            onAdd={addIngredientsToShopping}
+            onSkip={() => { setShowIngredientsModal(false); setIngredientsRecipe(null); }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1293,32 +1394,46 @@ function RecipeDetailView({
       </div>
 
       {/* Delete Confirmation */}
-      {showDeleteConfirm && (
-        <div className="contents">
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={() => setShowDeleteConfirm(false)}>
-            <div className="rounded-2xl p-6 mx-6 max-w-sm w-full" style={{ background: "var(--surface)", boxShadow: "var(--shadow-elevated)" }} onClick={(e) => e.stopPropagation()}>
-              <h3 className="text-base font-semibold text-text-1 mb-2">Rezept löschen?</h3>
-              <p className="text-sm text-text-3 mb-5">
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <motion.div
+            className="fixed inset-0 z-[999] flex items-end"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={DRAWER_SPRING}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowDeleteConfirm(false)} />
+            <motion.div
+              className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+              style={{ boxShadow: "var(--shadow-elevated)" }}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={DRAWER_SPRING}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+              </div>
+              <h3 className="text-base font-semibold text-text-1 text-center mb-2">Rezept löschen?</h3>
+              <p className="text-sm text-text-3 text-center mb-5">
                 „{recipe.title}" wird unwiderruflich gelöscht.
               </p>
               <div className="flex gap-3">
                 <button
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-surface-2 text-text-2"
+                  className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-surface-2 text-text-2"
                   onClick={() => setShowDeleteConfirm(false)}
                 >
                   Abbrechen
                 </button>
                 <button
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-danger text-white"
+                  className="flex-1 py-2.5 rounded-full text-sm font-semibold bg-danger text-white"
                   onClick={() => { setShowDeleteConfirm(false); onDelete(); }}
                 >
                   Löschen
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1643,10 +1758,23 @@ function IngredientsModal({
   const activeStores = stores.filter((s: any) => s.isActive !== false);
 
   return (
-    <div className="contents">
-      <div className="fixed inset-0 bg-black/40 z-50" onClick={onSkip} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-surface rounded-t-2xl pb-[env(safe-area-inset-bottom)] max-h-[70vh] flex flex-col">
-        <div className="px-4 py-3 border-b border-border flex-shrink-0">
+    <motion.div
+      className="fixed inset-0 z-[999] flex items-end"
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      transition={DRAWER_SPRING}
+    >
+      <div className="absolute inset-0 bg-black/40" onClick={onSkip} />
+      <motion.div
+        className="relative w-full bg-surface rounded-t-[20px] pb-[env(safe-area-inset-bottom)] max-h-[70vh] flex flex-col"
+        style={{ boxShadow: "var(--shadow-elevated)" }}
+        initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+        transition={DRAWER_SPRING}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+        </div>
+        <div className="px-4 py-2 border-b border-border flex-shrink-0">
           <h3 className="text-base font-semibold">Zutaten zur Einkaufsliste?</h3>
           <p className="text-xs text-text-3 mt-0.5">{recipe.title}</p>
         </div>
@@ -1692,7 +1820,7 @@ function IngredientsModal({
             Hinzufügen
           </button>
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

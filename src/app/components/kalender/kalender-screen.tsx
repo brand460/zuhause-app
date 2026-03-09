@@ -8,6 +8,7 @@ import {
   Clock,
   Repeat,
   Bell,
+  PenLine,
   FileText,
   Link,
   Palette,
@@ -15,7 +16,9 @@ import {
   Calendar,
   Check,
   Users,
+  Search,
 } from "lucide-react";
+import { CookingPot, Notepad } from "phosphor-react";
 import { apiFetch } from "../supabase-client";
 import { useKvRealtime, markLocalWrite } from "../use-kv-realtime";
 import {
@@ -290,10 +293,11 @@ interface MonthGridProps {
   selectedDate: Date;
   highlightMonth: number;
   today: Date;
+  isDark: boolean;
   onDayClick: (date: Date) => void;
 }
 
-const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightMonth, today, onDayClick }: MonthGridProps) {
+const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightMonth, today, isDark, onDayClick }: MonthGridProps) {
   const { weeks, weekBands, cellSingleEvents, cellAllEvents } = data;
   return (
     <div style={{ flex: "0 0 33.3333%" }}>
@@ -312,7 +316,7 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
           <div
               key={weekIdx}
               className="relative grid grid-cols-7"
-              style={{ height: 72 }}
+              style={{ minHeight: 95 }}
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const col = Math.min(6, Math.max(0, Math.floor((e.clientX - rect.left) / (rect.width / 7))));
@@ -320,7 +324,7 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
               }}
             >
             {bands.map((seg) => {
-              const pillStyle = getEventPillStyle(seg.event.color);
+              const pillStyle = getEventPillStyle(seg.event.color, isDark);
               const sMid = dateMidnight(new Date(seg.event.start_time));
               const eMid = dateMidnight(new Date(seg.event.end_time));
               const isStart = toDateKey(sMid) >= toDateKey(week[0].date);
@@ -354,7 +358,7 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
               const singleEvents = cellSingleEvents[key] || [];
               const allEvents = cellAllEvents[key] || [];
               const bandsHere = bandsAtCol(bands, colIdx);
-              const maxSingleSlots = Math.max(0, 2 - bandsHere);
+              const maxSingleSlots = Math.max(0, 3 - bandsHere);
               const visibleSingle = singleEvents.slice(0, maxSingleSlots);
               const visibleIds = new Set<string>();
               for (const seg of bands) {
@@ -368,10 +372,10 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
                 <button
                   key={colIdx}
                   onClick={(e) => { e.stopPropagation(); onDayClick(date); }}
-                  className={`flex flex-col items-center pt-1 relative overflow-hidden ${
+                  className={`flex flex-col items-center pt-1 relative overflow-visible ${
                     isSelected ? "rounded-lg" : ""
                   }`}
-                  style={{ height: 72, backgroundColor: isSelected ? "var(--surface-2)" : undefined }}
+                  style={{ minHeight: 95, height: "100%", backgroundColor: isSelected ? "var(--surface-2)" : undefined }}
                 >
                   <div
                     className={`w-6 h-6 flex items-center justify-center rounded-full text-xs relative z-10 flex-shrink-0 ${
@@ -396,7 +400,7 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
                   {visibleSingle.length > 0 && (
                     <div className="w-full flex flex-col gap-px absolute left-0 right-0" style={{ top: DAY_NUM_HEIGHT + bandAreaHeight }}>
                       {visibleSingle.map((ev) => {
-                        const pillStyle = getEventPillStyle(ev.color);
+                        const pillStyle = getEventPillStyle(ev.color, isDark);
                         return (
                           <div
                             key={ev.id}
@@ -413,16 +417,16 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
                   )}
                   {hiddenCount > 0 && (
                     <div
-                      className="absolute flex items-center justify-center gap-0.5 w-full"
+                      className="absolute flex items-center justify-center gap-0.5 w-full px-0.5"
                       style={{
                         top: DAY_NUM_HEIGHT + bandAreaHeight + visibleSingle.length * (BAND_HEIGHT + BAND_GAP),
                         height: 14,
                       }}
                     >
-                      {hiddenColors.map((c) => (
-                        <div key={c} className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: getColorHex(c) }} />
+                      <span className="text-[9px] font-semibold leading-none flex-shrink-0" style={{ color: "var(--color-accent)" }}>+{hiddenCount}</span>
+                      {hiddenColors.slice(0, 3).map((c) => (
+                        <div key={c} className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: getColorHex(c) }} />
                       ))}
-                      <span className="text-[9px] text-text-3 leading-none ml-px">+{hiddenCount}</span>
                     </div>
                   )}
                 </button>
@@ -435,27 +439,57 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
   );
 });
 
-function getEventPillStyle(color: EventColor): { bg: string; text: string } {
-  const map: Record<EventColor, { bg: string; text: string }> = {
+// Interpolate: (1-ratio)*255 white + ratio*hex  →  tinted white for dark pill text
+function mixWithWhite(hex: string, ratio: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgb(${Math.round(255 * (1 - ratio) + r * ratio)},${Math.round(255 * (1 - ratio) + g * ratio)},${Math.round(255 * (1 - ratio) + b * ratio)})`;
+}
+
+function getEventPillStyle(color: EventColor, isDark: boolean): { bg: string; text: string } {
+  const lightMap: Record<EventColor, { bg: string; text: string }> = {
     orange: { bg: "rgba(249,115,22,0.15)", text: "#EA580C" },
-    blue: { bg: "rgba(59,130,246,0.15)", text: "#2563EB" },
-    green: { bg: "rgba(34,197,94,0.15)", text: "#16A34A" },
-    red: { bg: "rgba(239,68,68,0.15)", text: "#DC2626" },
-    purple: { bg: "rgba(139,92,246,0.15)", text: "#7C3AED" },
-    gray: { bg: "rgba(107,114,128,0.15)", text: "#4B5563" },
+    blue:   { bg: "rgba(59,130,246,0.15)",  text: "#2563EB" },
+    green:  { bg: "rgba(34,197,94,0.15)",   text: "#16A34A" },
+    red:    { bg: "rgba(239,68,68,0.15)",   text: "#DC2626" },
+    purple: { bg: "rgba(139,92,246,0.15)",  text: "#7C3AED" },
+    gray:   { bg: "rgba(107,114,128,0.15)", text: "#4B5563" },
   };
-  return map[color] || map.orange;
+  const darkHex: Record<EventColor, string> = {
+    orange: "#F97316", blue: "#3B82F6", green: "#22C55E",
+    red: "#EF4444", purple: "#8B5CF6", gray: "#6B7280",
+  };
+  const darkBg: Record<EventColor, string> = {
+    orange: "rgba(249,115,22,0.28)", blue: "rgba(59,130,246,0.28)",
+    green: "rgba(34,197,94,0.28)", red: "rgba(239,68,68,0.28)",
+    purple: "rgba(139,92,246,0.28)", gray: "rgba(107,114,128,0.28)",
+  };
+  if (isDark) {
+    const hex = darkHex[color] ?? darkHex.orange;
+    return { bg: darkBg[color] ?? darkBg.orange, text: mixWithWhite(hex, 0.15) };
+  }
+  return lightMap[color] ?? lightMap.orange;
 }
 
 // ── Main Component ─────────────────────────────────────────────────
 
-export function KalenderScreen() {
+export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, itemId?: string | null) => void } = {}) {
   const today = useMemo(() => new Date(), []);
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [selectedDate, setSelectedDate] = useState(today);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [labels, setLabels] = useState<CalendarLabel[]>([]);
+  const [isDark, setIsDark] = useState(() => document.documentElement.dataset.theme === "dark");
+
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      setIsDark(document.documentElement.dataset.theme === "dark");
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [showRecurringPrompt, setShowRecurringPrompt] = useState(false);
@@ -581,6 +615,7 @@ export function KalenderScreen() {
       notifications: [],
       linked_recipe_id: null,
       linked_list_id: null,
+      linked_page_id: null,
     });
     setShowEditor(true);
   };
@@ -819,7 +854,7 @@ export function KalenderScreen() {
       </div>
 
       {/* Month Header */}
-      <div className="flex-shrink-0 flex items-center justify-between px-5 py-2 bg-surface">
+      <div className="flex-shrink-0 flex items-center justify-between px-5 py-2 bg-surface rounded-t-[16px]">
         <button
           onClick={() => animateToMonth("prev")}
           className="w-7 h-7 rounded-lg flex items-center justify-center text-text-3 hover:text-text-1 hover:bg-surface-2 transition"
@@ -858,6 +893,7 @@ export function KalenderScreen() {
             selectedDate={selectedDate}
             highlightMonth={prevMonth}
             today={today}
+            isDark={isDark}
             onDayClick={handleDayClick}
           />
           <MonthGrid
@@ -865,6 +901,7 @@ export function KalenderScreen() {
             selectedDate={selectedDate}
             highlightMonth={currentMonth}
             today={today}
+            isDark={isDark}
             onDayClick={handleDayClick}
           />
           <MonthGrid
@@ -872,13 +909,14 @@ export function KalenderScreen() {
             selectedDate={selectedDate}
             highlightMonth={nextMonth}
             today={today}
+            isDark={isDark}
             onDayClick={handleDayClick}
           />
         </div>
       </div>
 
       {/* Event Panel */}
-      <div className="flex-1 min-h-0 flex flex-col" style={{ background: "var(--zu-bg)" }}>
+      <div className="flex flex-col flex-1 min-h-0" style={{ background: "var(--zu-bg)" }}>
         <div className="flex-shrink-0 flex items-center justify-between px-5 py-3">
           <h3 className="text-sm font-bold text-text-1">{formatDateLong(selectedDate)}</h3>
           <button
@@ -889,7 +927,7 @@ export function KalenderScreen() {
           </button>
         </div>
 
-        <div className={`flex-1 min-h-0 px-4 pb-4 ${selectedDayEvents.length > 0 ? "overflow-y-auto" : "overflow-hidden"}`}>
+        <div className="flex-1 min-h-0 px-4 pb-4 overflow-y-auto">
           {selectedDayEvents.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-text-3">
               <p className="text-sm">Keine Termine</p>
@@ -899,7 +937,7 @@ export function KalenderScreen() {
               {selectedDayEvents.map((ev) => {
                 const hasAssigned = ev.assigned_to && ev.assigned_to.length > 0;
                 const hasNote = !!ev.description;
-                const hasLink = ev.linked_recipe_id != null || ev.linked_list_id != null;
+                const hasLink = ev.linked_recipe_id != null || ev.linked_list_id != null || ev.linked_page_id != null;
                 const hasRepeat = ev.repeat_rule !== "none";
                 const hasMeta = hasAssigned || hasNote || hasLink || hasRepeat;
 
@@ -971,9 +1009,11 @@ export function KalenderScreen() {
             event={editingEvent}
             contextDateKey={toDateKey(selectedDate)}
             labels={labels}
+            allEvents={events}
             onSave={handleSaveEvent}
             onAutoSave={handleAutoSaveEvent}
             onDelete={editingEvent.id ? (mode: "all" | "single" | "future", dateKey?: string) => handleDeleteEvent(editingEvent.id, mode, dateKey) : undefined}
+            onNavigate={onNavigate}
             onClose={() => {
               setShowEditor(false);
               setEditingEvent(null);
@@ -1012,14 +1052,14 @@ function RecurringPrompt({
 }) {
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-end justify-center"
+      className="fixed inset-0 z-[1000] flex items-end justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
       <motion.div
-        className="relative w-full max-w-[400px] bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+        className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
         style={{ boxShadow: "var(--shadow-elevated)" }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
@@ -1281,14 +1321,14 @@ function DateTimePickerSheet({
 
   return (
     <motion.div
-      className="fixed inset-0 z-[60] flex items-end justify-center"
+      className="fixed inset-0 z-[1000] flex items-end justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <motion.div
-        className="relative w-full max-w-[400px] bg-surface rounded-t-[20px] flex flex-col"
+        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
         style={{ boxShadow: "var(--shadow-elevated)" }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
@@ -1403,14 +1443,14 @@ function CustomNotificationSheet({
 
   return (
     <motion.div
-      className="fixed inset-0 z-[70] flex items-end justify-center"
+      className="fixed inset-0 z-[1000] flex items-end justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <motion.div
-        className="relative w-full max-w-[400px] bg-surface rounded-t-[20px] flex flex-col"
+        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
         style={{ boxShadow: "var(--shadow-elevated)" }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
@@ -1474,14 +1514,14 @@ function PopupSheet({
 }) {
   return (
     <motion.div
-      className="fixed inset-0 z-[60] flex items-end justify-center"
+      className="fixed inset-0 z-[1000] flex items-end justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <motion.div
-        className="relative w-full max-w-[400px] bg-surface rounded-t-[20px] flex flex-col"
+        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
         style={{ maxHeight: "60dvh", boxShadow: "var(--shadow-elevated)" }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
@@ -1517,7 +1557,7 @@ function DeleteConfirmModal({
 }) {
   return (
     <motion.div
-      className="fixed inset-0 z-[70] flex items-end justify-center"
+      className="fixed inset-0 z-[1000] flex items-end justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -1525,7 +1565,7 @@ function DeleteConfirmModal({
       <div className="absolute inset-0 bg-black/40" onClick={(e) => { e.stopPropagation(); onCancel(); }} />
       {isRecurring ? (
         <motion.div
-          className="relative w-full max-w-[400px] bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+          className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
           style={{ boxShadow: "var(--shadow-elevated)" }}
           initial={{ y: "100%" }}
           animate={{ y: 0 }}
@@ -1563,19 +1603,22 @@ function DeleteConfirmModal({
         </motion.div>
       ) : (
         <motion.div
-          className="relative w-full max-w-[320px] bg-surface rounded-[var(--radius-card)] p-6 mb-8"
+          className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
           style={{ boxShadow: "var(--shadow-elevated)" }}
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.9, opacity: 0 }}
-          transition={{ type: "spring", damping: 25, stiffness: 400 }}
+          initial={{ y: "100%" }}
+          animate={{ y: 0 }}
+          exit={{ y: "100%" }}
+          transition={{ type: "spring", damping: 25, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
         >
+          <div className="flex justify-center mb-4">
+            <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+          </div>
           <h3 className="text-base font-bold text-text-1 text-center">Event löschen?</h3>
-          <p className="text-sm text-text-3 text-center mt-2">
+          <p className="text-sm text-text-3 text-center mt-2 mb-5">
             Diese Aktion kann nicht rückgängig gemacht werden.
           </p>
-          <div className="flex gap-3 mt-5">
+          <div className="flex gap-3">
             <button
               onClick={onCancel}
               className="flex-1 py-2.5 rounded-full bg-surface-2 text-text-2 text-sm font-semibold transition"
@@ -1595,6 +1638,248 @@ function DeleteConfirmModal({
   );
 }
 
+// ── Note Picker Drawer ─────────────────────────────────────────────
+
+function NotePickerDrawer({
+  pages,
+  selectedPageId,
+  onSelect,
+  onClose,
+}: {
+  pages: { id: string; title: string; icon: string; parent_id: string | null; position: number }[];
+  selectedPageId: string | null;
+  onSelect: (pageId: string | null) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => searchRef.current?.focus(), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const filteredPages = useMemo(() => {
+    if (!search.trim()) return pages;
+    const q = search.trim().toLowerCase();
+    return pages.filter((p) => p.title.toLowerCase().includes(q));
+  }, [pages, search]);
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <div
+        className="absolute inset-0 bg-black/40"
+        style={{ touchAction: "none" }}
+        onClick={onClose}
+      />
+      <motion.div
+        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
+        style={{ height: "40dvh", boxShadow: "var(--shadow-elevated)", left: 0, right: 0 }}
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Handle bar */}
+        <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
+          <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+        </div>
+
+        {/* Search field */}
+        <div className="px-4 pb-2 flex-shrink-0">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "var(--surface-2)" }}>
+            <Search className="w-4 h-4 text-text-3 flex-shrink-0" />
+            <input
+              ref={searchRef}
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Notiz suchen..."
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
+              inputMode="text"
+              className="flex-1 text-sm text-text-1 placeholder:text-text-3 outline-none bg-transparent"
+              style={{ caretColor: "#F97316" }}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="w-5 h-5 flex items-center justify-center text-text-3"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+          {/* "Keine Notiz" option */}
+          <button
+            onClick={() => onSelect(null)}
+            className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
+            style={{ borderBottom: "1px solid var(--zu-border)" }}
+          >
+            <span className="flex-1 text-sm text-text-1 text-left">Keine Notiz</span>
+            {selectedPageId === null && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
+          </button>
+
+          {filteredPages.map((page) => (
+            <button
+              key={page.id}
+              onClick={() => onSelect(page.id)}
+              className="w-full flex items-center gap-3 px-5 py-3 active:bg-surface-2 transition-colors"
+              style={{ borderBottom: "1px solid var(--zu-border)" }}
+            >
+              <span className="text-base flex-shrink-0">{page.icon || "📄"}</span>
+              <span className="flex-1 text-sm text-text-1 text-left truncate">{page.title || "Ohne Titel"}</span>
+              {selectedPageId === page.id && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
+            </button>
+          ))}
+
+          {filteredPages.length === 0 && search.trim() && (
+            <div className="px-5 py-6 text-center">
+              <p className="text-sm text-text-3">Keine Notizen gefunden</p>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Recipe Picker Drawer ───────────────────────────────────────────
+
+function RecipePickerDrawer({
+  recipes,
+  selectedRecipeId,
+  onSelect,
+  onClose,
+}: {
+  recipes: { id: string; title: string; description: string; categories: string[]; image_url: string | null }[];
+  selectedRecipeId: string | null;
+  onSelect: (recipeId: string | null) => void;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => searchRef.current?.focus(), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const filteredRecipes = useMemo(() => {
+    if (!search.trim()) return recipes;
+    const q = search.trim().toLowerCase();
+    return recipes.filter((r) => r.title.toLowerCase().includes(q));
+  }, [recipes, search]);
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <div
+        className="absolute inset-0 bg-black/40"
+        style={{ touchAction: "none" }}
+        onClick={onClose}
+      />
+      <motion.div
+        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
+        style={{ height: "40dvh", boxShadow: "var(--shadow-elevated)", left: 0, right: 0 }}
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Handle bar */}
+        <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
+          <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+        </div>
+
+        {/* Search field */}
+        <div className="px-4 pb-2 flex-shrink-0">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: "var(--surface-2)" }}>
+            <Search className="w-4 h-4 text-text-3 flex-shrink-0" />
+            <input
+              ref={searchRef}
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rezept suchen..."
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
+              inputMode="text"
+              className="flex-1 text-sm text-text-1 placeholder:text-text-3 outline-none bg-transparent"
+              style={{ caretColor: "#F97316" }}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="w-5 h-5 flex items-center justify-center text-text-3"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+          {/* "Kein Rezept" option at the top */}
+          <button
+            onClick={() => onSelect(null)}
+            className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
+            style={{ borderBottom: "1px solid var(--zu-border)" }}
+          >
+            <span className="flex-1 text-sm text-text-1 text-left">Kein Rezept</span>
+            {selectedRecipeId === null && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
+          </button>
+
+          {filteredRecipes.map((recipe) => (
+            <button
+              key={recipe.id}
+              onClick={() => onSelect(recipe.id)}
+              className="w-full flex items-center gap-3 px-5 py-3 active:bg-surface-2 transition-colors"
+              style={{ borderBottom: "1px solid var(--zu-border)" }}
+            >
+              <span className="text-base flex-shrink-0">🍳</span>
+              <span className="flex-1 text-sm text-text-1 text-left truncate">{recipe.title}</span>
+              {selectedRecipeId === recipe.id && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
+            </button>
+          ))}
+
+          {filteredRecipes.length === 0 && search.trim() && (
+            <div className="px-5 py-6 text-center">
+              <p className="text-sm text-text-3">Keine Rezepte gefunden</p>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ── Event Editor Bottom Sheet ──────────────────────────────────────
 
 const NOTIFICATION_PRESETS: { value: number; label: string }[] = [
@@ -1610,17 +1895,21 @@ function EventEditorSheet({
   event,
   contextDateKey,
   labels,
+  allEvents,
   onSave,
   onAutoSave,
   onDelete,
+  onNavigate,
   onClose,
 }: {
   event: CalendarEvent;
   contextDateKey: string;
   labels: CalendarLabel[];
+  allEvents: CalendarEvent[];
   onSave: (ev: CalendarEvent) => void;
   onAutoSave: (ev: CalendarEvent) => void;
   onDelete?: (mode: "all" | "single" | "future", dateKey?: string) => void;
+  onNavigate?: (tab: string, itemId?: string | null) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(event.title);
@@ -1636,6 +1925,8 @@ function EventEditorSheet({
     return [];
   });
   const [assignedTo, setAssignedTo] = useState<string[]>(event.assigned_to || []);
+  const [linkedPageId, setLinkedPageId] = useState<string | null>(event.linked_page_id ?? null);
+  const [linkedRecipeId, setLinkedRecipeId] = useState<string | null>(event.linked_recipe_id ?? null);
 
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
@@ -1644,11 +1935,175 @@ function EventEditorSheet({
   const [showNotificationPopup, setShowNotificationPopup] = useState(false);
   const [showCustomNotification, setShowCustomNotification] = useState(false);
   const [editingNote, setEditingNote] = useState(!!event.description);
-  const [showLinkPopup, setShowLinkPopup] = useState(false);
+  const [showRecipePickerDrawer, setShowRecipePickerDrawer] = useState(false);
+  const [showNotePickerDrawer, setShowNotePickerDrawer] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
+  // ── visualViewport height for dynamic maxHeight ────────────────
+  const [vpHeight, setVpHeight] = useState(() => window.visualViewport?.height ?? window.innerHeight);
+  useEffect(() => {
+    const vp = window.visualViewport;
+    if (!vp) return;
+    const update = () => setVpHeight(vp.height);
+    vp.addEventListener("resize", update);
+    update();
+    return () => vp.removeEventListener("resize", update);
+  }, []);
+  // Always leave 72 px visible above the drawer so it looks like a sheet, not a full screen
+  const drawerMaxHeight = vpHeight - 72;
+
+  // ── Pages for note linking ─────────────────────────────────────
+  interface LinkedPage { id: string; title: string; icon: string; parent_id: string | null; position: number; }
+  const [availablePages, setAvailablePages] = useState<LinkedPage[]>([]);
+  const [pagesLoaded, setPagesLoaded] = useState(false);
+
+  // ── Recipes for recipe linking ────────────────────────────────
+  interface LinkedRecipe { id: string; title: string; description: string; categories: string[]; image_url: string | null; }
+  const [availableRecipes, setAvailableRecipes] = useState<LinkedRecipe[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [pagesRes, recipesRes] = await Promise.all([
+          apiFetch(`/custom-pages?household_id=${DEV_HOUSEHOLD_ID}`),
+          apiFetch(`/recipes?household_id=${DEV_HOUSEHOLD_ID}`),
+        ]);
+        setAvailablePages(pagesRes.pages || []);
+        setAvailableRecipes(recipesRes.recipes || []);
+      } catch (err) {
+        console.error("Fehler beim Laden der Seiten/Rezepte:", err);
+      } finally {
+        setPagesLoaded(true);
+      }
+    })();
+  }, []);
+
+  const linkedPage = useMemo(
+    () => linkedPageId ? availablePages.find((p) => p.id === linkedPageId) || null : null,
+    [linkedPageId, availablePages]
+  );
+
+  const linkedRecipe = useMemo(
+    () => linkedRecipeId ? availableRecipes.find((r) => r.id === linkedRecipeId) || null : null,
+    [linkedRecipeId, availableRecipes]
+  );
+
   const isNew = !event.id;
+
+  // ── Autocomplete suggestions ──────────────────────────────────
+  interface AutocompleteSuggestion {
+    title: string;
+    start_time: string;
+    end_time: string;
+    color: EventColor;
+    description: string;
+    notifications: number[];
+    notification_minutes: NotificationMinutes;
+    linked_recipe_id: string | null;
+    linked_list_id: string | null;
+    linked_page_id: string | null;
+    all_day: boolean;
+    assigned_to?: string[];
+  }
+  const [suggestions, setSuggestions] = useState<AutocompleteSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [dismissedTitles, setDismissedTitles] = useState<Set<string>>(new Set());
+  const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+
+  // Search past events for autocomplete
+  useEffect(() => {
+    if (!isNew) { setSuggestions([]); return; }
+    if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+
+    if (!title.trim() || title.trim().length < 1) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    suggestDebounceRef.current = setTimeout(() => {
+      const query = title.trim().toLowerCase();
+      // Group events by title (case-insensitive), pick the most recent occurrence
+      const titleMap = new Map<string, CalendarEvent>();
+      for (const ev of allEvents) {
+        const evStart = new Date(ev.start_time);
+        if (!ev.title.toLowerCase().includes(query)) continue;
+        const key = ev.title.toLowerCase();
+        if (dismissedTitles.has(key)) continue;
+        const existing = titleMap.get(key);
+        if (!existing || new Date(existing.start_time) < evStart) {
+          titleMap.set(key, ev);
+        }
+      }
+      // Take up to 5 suggestions sorted by most recent
+      const results = Array.from(titleMap.values())
+        .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
+        .slice(0, 5)
+        .map((ev) => ({
+          title: ev.title,
+          start_time: ev.start_time,
+          end_time: ev.end_time,
+          color: ev.color,
+          description: ev.description,
+          notifications: ev.notifications || (ev.notification_minutes > 0 ? [ev.notification_minutes] : []),
+          notification_minutes: ev.notification_minutes,
+          linked_recipe_id: ev.linked_recipe_id,
+          linked_list_id: ev.linked_list_id,
+          linked_page_id: ev.linked_page_id,
+          all_day: ev.all_day,
+          assigned_to: ev.assigned_to,
+        }));
+
+      setSuggestions(results);
+      setShowSuggestions(results.length > 0);
+    }, 200);
+
+    return () => {
+      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
+    };
+  }, [title, allEvents, dismissedTitles]);
+
+  const handleSelectSuggestion = useCallback((s: AutocompleteSuggestion) => {
+    // Pre-fill title
+    setTitle(s.title);
+
+    // Pre-fill time: keep the selected date but use the old event's time-of-day & duration
+    const oldStart = new Date(s.start_time);
+    const oldEnd = new Date(s.end_time);
+    const durationMs = oldEnd.getTime() - oldStart.getTime();
+    const selDate = new Date(startTime); // current selected date from the form
+    const newStart = new Date(selDate.getFullYear(), selDate.getMonth(), selDate.getDate(),
+      oldStart.getHours(), oldStart.getMinutes(), oldStart.getSeconds());
+    const newEnd = new Date(newStart.getTime() + durationMs);
+    setStartTime(newStart.toISOString());
+    setEndTime(newEnd.toISOString());
+
+    // Pre-fill other fields
+    setAllDay(s.all_day);
+    setColor(s.color);
+    setDescription(s.description);
+    setNotifications(s.notifications);
+    if (s.assigned_to) setAssignedTo(s.assigned_to);
+    if (s.linked_page_id) setLinkedPageId(s.linked_page_id);
+    if (s.linked_recipe_id) setLinkedRecipeId(s.linked_recipe_id);
+    if (s.description) setEditingNote(true);
+
+    // Hide suggestions
+    setShowSuggestions(false);
+    setSuggestions([]);
+  }, [startTime]);
+
+  const handleDismissSuggestion = useCallback((titleToDismiss: string) => {
+    setDismissedTitles((prev) => new Set(prev).add(titleToDismiss.toLowerCase()));
+    setSuggestions((prev) => {
+      const filtered = prev.filter((s) => s.title.toLowerCase() !== titleToDismiss.toLowerCase());
+      if (filtered.length === 0) setShowSuggestions(false);
+      return filtered;
+    });
+  }, []);
+
   const isFirstRender = useRef(true);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1666,13 +2121,15 @@ function EventEditorSheet({
       notification_minutes: (notifications[0] ?? 0) as NotificationMinutes,
       notifications,
       assigned_to: assignedTo,
+      linked_page_id: linkedPageId,
+      linked_recipe_id: linkedRecipeId,
     };
-  }, [event, title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo]);
+  }, [event, title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageId, linkedRecipeId]);
 
   // Auto-save for existing events
   const formSnapshot = useMemo(
-    () => JSON.stringify({ title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo }),
-    [title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo]
+    () => JSON.stringify({ title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageId, linkedRecipeId }),
+    [title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageId, linkedRecipeId]
   );
 
   useEffect(() => {
@@ -1716,7 +2173,8 @@ function EventEditorSheet({
     setShowRepeatPopup(false);
     setShowNotificationPopup(false);
     setShowCustomNotification(false);
-    setShowLinkPopup(false);
+    setShowRecipePickerDrawer(false);
+    setShowNotePickerDrawer(false);
     setShowDeleteConfirm(false);
     setShowDiscardConfirm(false);
     onClose();
@@ -1783,15 +2241,15 @@ function EventEditorSheet({
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-end justify-center"
+      className="fixed inset-0 z-[1000] flex items-end justify-center"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={handleCloseAttempt} />
       <motion.div
-        className="relative w-full max-w-[400px] bg-surface rounded-t-[20px] flex flex-col"
-        style={{ maxHeight: "90dvh", boxShadow: "var(--shadow-elevated)" }}
+        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
+        style={{ maxHeight: drawerMaxHeight, boxShadow: "var(--shadow-elevated)" }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
@@ -1805,7 +2263,7 @@ function EventEditorSheet({
         }}
       >
         {/* Handle bar */}
-        <div className="flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing">
+        <div className="flex-shrink-0 flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing">
           <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
         </div>
 
@@ -1825,11 +2283,11 @@ function EventEditorSheet({
           <div className="h-1" />
         )}
 
-        {/* Scrollable form rows */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* Title */}
-          <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--zu-border)" }}>
+        {/* Title — fixed in header, never scrolls away */}
+        <div className="flex-shrink-0 relative" style={{ borderBottom: "1px solid var(--zu-border)" }}>
+          <div className="px-4 py-3">
             <input
+              ref={titleInputRef}
               type="text"
               autoComplete="off"
               autoCorrect="off"
@@ -1841,12 +2299,59 @@ function EventEditorSheet({
               inputMode="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+              onBlur={() => { setTimeout(() => setShowSuggestions(false), 150); }}
               placeholder="Titel hinzufügen"
               className="w-full text-lg text-text-1 placeholder:text-text-3 outline-none bg-transparent"
+              style={{ caretColor: "#F97316" }}
               autoFocus={isNew}
             />
           </div>
 
+          {/* Autocomplete suggestions */}
+          {isNew && showSuggestions && suggestions.length > 0 && (
+            <div
+              className="absolute left-3 right-3 z-50 rounded-xl overflow-hidden"
+              style={{
+                top: "100%",
+                background: "var(--surface-2)",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+              }}
+            >
+                {suggestions.map((s, idx) => {
+                  const oldStart = new Date(s.start_time);
+                  const timeStr = `${String(oldStart.getHours()).padStart(2, "0")}:${String(oldStart.getMinutes()).padStart(2, "0")}`;
+                  return (
+                    <div
+                      key={`${s.title}-${idx}`}
+                      className="flex items-center gap-3 px-3 py-2.5 active:bg-surface transition-colors"
+                      style={idx < suggestions.length - 1 ? { borderBottom: "1px solid var(--zu-border)" } : undefined}
+                      onPointerDown={(e) => { e.preventDefault(); handleSelectSuggestion(s); }}
+                    >
+                      <Clock className="w-4 h-4 text-text-3 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-semibold text-text-1 block truncate">{s.title}</span>
+                        <span className="text-xs text-text-3">{timeStr} Uhr</span>
+                      </div>
+                      <button
+                        className="w-7 h-7 flex items-center justify-center rounded-full text-text-3 flex-shrink-0 active:bg-surface-2"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleDismissSuggestion(s.title);
+                        }}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+        {/* Scrollable form rows */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {/* Ganztägig */}
           <FormRow icon={<Clock className="w-5 h-5" />}>
             <span className="flex-1 text-sm text-text-1">Ganztägig</span>
@@ -1944,16 +2449,24 @@ function EventEditorSheet({
 
           {/* Wiederholung */}
           <FormRow icon={<Repeat className="w-5 h-5" />} onClick={() => setShowRepeatPopup(true)}>
-            <span className="flex-1 text-sm text-text-1 text-left">
-              {repeatRule === "none" ? "Keine Wiederholung" : repeatLabel}
-            </span>
-            <ChevronRight className="w-4 h-4 text-text-3 flex-shrink-0" />
+            {repeatRule === "none" ? (
+              <span className="flex-1 text-sm text-left" style={{ color: "var(--text-3)" }}>
+                Wiederholung hinzufügen
+              </span>
+            ) : (
+              <div className="flex items-center flex-1 min-w-0">
+                <span className="flex-1 text-sm text-left" style={{ color: "var(--text-1)" }}>
+                  {repeatLabel}
+                </span>
+                <ChevronRight className="w-4 h-4 text-text-3 flex-shrink-0" />
+              </div>
+            )}
           </FormRow>
 
           {/* Existing notifications */}
           {notifications.map((n) => (
-            <FormRow key={n} icon={<Bell className="w-5 h-5" />}>
-              <span className="flex-1 text-sm text-text-1">{formatNotification(n)}</span>
+            <FormRow key={n} icon={<Bell className="w-5 h-5" />} noBorder>
+              <span className="flex-1 text-sm" style={{ color: "var(--text-1)" }}>{formatNotification(n)}</span>
               <button
                 onClick={() => removeNotification(n)}
                 className="text-text-3 hover:text-text-1 transition flex-shrink-0 p-1"
@@ -1963,22 +2476,24 @@ function EventEditorSheet({
             </FormRow>
           ))}
 
-          {/* Add notification */}
-          <FormRow icon={<Bell className="w-5 h-5" />} onClick={() => setShowNotificationPopup(true)}>
-            <span className="flex-1 text-sm text-text-3 text-left">+ Benachrichtigung hinzufügen</span>
+          {/* Add notification — placeholder always visible */}
+          <FormRow icon={notifications.length === 0 ? <Bell className="w-5 h-5" /> : <div className="w-5 h-5" />} onClick={() => setShowNotificationPopup(true)}>
+            <span className="flex-1 text-sm text-left" style={{ color: "var(--text-3)" }}>
+              Benachrichtigung hinzufügen
+            </span>
           </FormRow>
 
-          {/* Notiz */}
+          {/* Beschreibung */}
           {editingNote ? (
             <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--zu-border)" }}>
               <div className="flex items-start">
                 <div className="w-5 h-5 flex items-center justify-center text-text-3 mr-3 flex-shrink-0 mt-0.5">
-                  <FileText className="w-5 h-5" />
+                  <PenLine className="w-5 h-5" />
                 </div>
                 <textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Notiz hinzufügen..."
+                  placeholder="Beschreibung hinzufügen..."
                   rows={3}
                   autoComplete="off"
                   autoCorrect="off"
@@ -1993,17 +2508,90 @@ function EventEditorSheet({
               </div>
             </div>
           ) : (
-            <FormRow icon={<FileText className="w-5 h-5" />} onClick={() => setEditingNote(true)}>
-              <span className={`flex-1 text-sm text-left ${description ? "text-text-1" : "text-text-3"}`}>
-                {description || "Notiz hinzufügen..."}
+            <FormRow icon={<PenLine className="w-5 h-5" />} onClick={() => setEditingNote(true)}>
+              <span className="flex-1 text-sm text-left" style={{ color: description ? "var(--text-1)" : "var(--text-3)" }}>
+                {description || "Beschreibung hinzufügen"}
               </span>
             </FormRow>
           )}
 
-          {/* Verknüpfungen */}
-          <FormRow icon={<Link className="w-5 h-5" />} onClick={() => setShowLinkPopup(true)}>
-            <span className="flex-1 text-sm text-text-3 text-left">+ Verknüpfung hinzufügen</span>
-          </FormRow>
+          {/* Rezept-Verknüpfung — split: left navigates, right opens picker */}
+          <div className="w-full flex items-center" style={{ borderBottom: "1px solid var(--zu-border)" }}>
+            <button
+              className="flex items-center flex-1 min-w-0 px-4 py-3 active:bg-surface-2 transition-colors"
+              onClick={() => linkedRecipe && linkedRecipeId ? onNavigate?.("kochen", linkedRecipeId) : setShowRecipePickerDrawer(true)}
+            >
+              <div className="w-5 h-5 flex items-center justify-center text-text-3 mr-3 flex-shrink-0">
+                <CookingPot size={20} weight="regular" />
+              </div>
+              <div className="flex-1 min-w-0 flex items-center">
+                {linkedRecipe ? (
+                  <span
+                    className="inline-flex items-center gap-1 truncate"
+                    style={{
+                      background: "var(--surface-2)",
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      fontSize: 13,
+                      color: "var(--text-1)",
+                    }}
+                  >
+                    🍳 {linkedRecipe.title}
+                  </span>
+                ) : (
+                  <span className="flex-1 text-sm text-left" style={{ color: "var(--text-3)" }}>
+                    Rezept hinzufügen
+                  </span>
+                )}
+              </div>
+            </button>
+            <button
+              className="flex items-center justify-center flex-shrink-0 py-3 active:bg-surface-2 transition-colors"
+              style={{ padding: "0 16px", minWidth: 44, minHeight: 44 }}
+              onClick={() => setShowRecipePickerDrawer(true)}
+            >
+              <ChevronRight className="w-4 h-4 text-text-3" />
+            </button>
+          </div>
+
+          {/* Notiz-Verknüpfung — split: left navigates, right opens picker */}
+          <div className="w-full flex items-center" style={{ borderBottom: "1px solid var(--zu-border)" }}>
+            <button
+              className="flex items-center flex-1 min-w-0 px-4 py-3 active:bg-surface-2 transition-colors"
+              onClick={() => linkedPage && linkedPageId ? onNavigate?.("listen", linkedPageId) : setShowNotePickerDrawer(true)}
+            >
+              <div className="w-5 h-5 flex items-center justify-center text-text-3 mr-3 flex-shrink-0">
+                <Notepad size={20} weight="regular" />
+              </div>
+              <div className="flex-1 min-w-0 flex items-center">
+                {linkedPage ? (
+                  <span
+                    className="inline-flex items-center gap-1 truncate"
+                    style={{
+                      background: "var(--surface-2)",
+                      borderRadius: 999,
+                      padding: "4px 10px",
+                      fontSize: 13,
+                      color: "var(--text-1)",
+                    }}
+                  >
+                    {linkedPage.icon || "📄"} {linkedPage.title || "Ohne Titel"}
+                  </span>
+                ) : (
+                  <span className="flex-1 text-sm text-left" style={{ color: "var(--text-3)" }}>
+                    Notiz hinzufügen
+                  </span>
+                )}
+              </div>
+            </button>
+            <button
+              className="flex items-center justify-center flex-shrink-0 py-3 active:bg-surface-2 transition-colors"
+              style={{ padding: "0 16px", minWidth: 44, minHeight: 44 }}
+              onClick={() => setShowNotePickerDrawer(true)}
+            >
+              <ChevronRight className="w-4 h-4 text-text-3" />
+            </button>
+          </div>
 
           {/* Delete — only for existing events */}
           {onDelete && (
@@ -2076,7 +2664,20 @@ function EventEditorSheet({
       <AnimatePresence>
         {showRepeatPopup && (
           <PopupSheet onClose={() => setShowRepeatPopup(false)}>
-            {REPEAT_OPTIONS.map((opt) => (
+            {/* "Keine Wiederholung" as first option to remove */}
+            {repeatRule !== "none" && (
+              <button
+                onClick={() => {
+                  setRepeatRule("none");
+                  setShowRepeatPopup(false);
+                }}
+                className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
+                style={{ borderBottom: "1px solid var(--zu-border)" }}
+              >
+                <span className="flex-1 text-sm text-text-1 text-left">Keine Wiederholung</span>
+              </button>
+            )}
+            {REPEAT_OPTIONS.filter((opt) => opt.value !== "none").map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => {
@@ -2085,9 +2686,7 @@ function EventEditorSheet({
                 }}
                 className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
               >
-                <span className="flex-1 text-sm text-text-1 text-left">
-                  {opt.value === "none" ? "Keine Wiederholung" : opt.label}
-                </span>
+                <span className="flex-1 text-sm text-text-1 text-left">{opt.label}</span>
                 {repeatRule === opt.value && (
                   <Check className="w-4 h-4 text-accent flex-shrink-0" />
                 )}
@@ -2138,23 +2737,33 @@ function EventEditorSheet({
         )}
       </AnimatePresence>
 
-      {/* Link popup */}
+      {/* Recipe picker drawer */}
       <AnimatePresence>
-        {showLinkPopup && (
-          <PopupSheet onClose={() => setShowLinkPopup(false)}>
-            <button
-              onClick={() => setShowLinkPopup(false)}
-              className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
-            >
-              <span className="flex-1 text-sm text-text-3 text-left">Rezept verknüpfen (kommt bald)</span>
-            </button>
-            <button
-              onClick={() => setShowLinkPopup(false)}
-              className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
-            >
-              <span className="flex-1 text-sm text-text-3 text-left">Liste verknüpfen (kommt bald)</span>
-            </button>
-          </PopupSheet>
+        {showRecipePickerDrawer && (
+          <RecipePickerDrawer
+            recipes={availableRecipes}
+            selectedRecipeId={linkedRecipeId}
+            onSelect={(recipeId) => {
+              setLinkedRecipeId(recipeId);
+              setShowRecipePickerDrawer(false);
+            }}
+            onClose={() => setShowRecipePickerDrawer(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Note picker drawer */}
+      <AnimatePresence>
+        {showNotePickerDrawer && (
+          <NotePickerDrawer
+            pages={availablePages}
+            selectedPageId={linkedPageId}
+            onSelect={(pageId) => {
+              setLinkedPageId(pageId);
+              setShowNotePickerDrawer(false);
+            }}
+            onClose={() => setShowNotePickerDrawer(false)}
+          />
         )}
       </AnimatePresence>
 
@@ -2186,7 +2795,7 @@ function EventEditorSheet({
       <AnimatePresence>
         {showDiscardConfirm && (
           <motion.div
-            className="fixed inset-0 z-[70] flex items-center justify-center px-6"
+            className="fixed inset-0 z-[1000] flex items-center justify-center px-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

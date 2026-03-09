@@ -20,6 +20,7 @@ export interface CalendarEvent {
   assigned_to?: string[]; // array of household member IDs
   linked_recipe_id: string | null;
   linked_list_id: string | null;
+  linked_page_id: string | null;
   // For single-occurrence edits of recurring events
   recurring_exception_dates?: string[]; // ISO date strings where this event is modified
   recurring_edits?: Record<string, Partial<CalendarEvent>>; // date -> overrides
