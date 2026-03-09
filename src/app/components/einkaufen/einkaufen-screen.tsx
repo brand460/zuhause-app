@@ -1142,6 +1142,7 @@ function SortableShoppingItem({
   onQuantityChange,
   onOpenQuantityDrawer,
   onNameChange,
+  onDelete,
   animatingCheckId,
   isTransferDragging,
   onEditingChange,
@@ -1151,6 +1152,7 @@ function SortableShoppingItem({
   onQuantityChange: (delta: number) => void;
   onOpenQuantityDrawer: () => void;
   onNameChange: (newName: string) => void;
+  onDelete: () => void;
   animatingCheckId: string | null;
   isTransferDragging?: boolean;
   onEditingChange?: (editing: boolean) => void;
@@ -1255,8 +1257,133 @@ function SortableShoppingItem({
   const unitLabel =
     item.unit && item.unit !== "Stk." ? item.unit : null;
 
+  // ── Swipe-to-delete (Gmail-style) ──
+  const [swipeX, setSwipeX] = useState(0);
+  const [swiping, setSwiping] = useState(false);
+  const [swipeOut, setSwipeOut] = useState(false);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const swipeDecidedRef = useRef<"swipe" | "scroll" | null>(null);
+  const swipeRowRef = useRef<HTMLDivElement>(null);
+
+  const onSwipePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      // Don't swipe while editing name or dragging
+      if (isEditingName || isDragging) return;
+      // Ignore if started on a button / interactive element (grip, +/- etc.)
+      const target = e.target as HTMLElement;
+      if (target.closest("button") || target.closest("input")) return;
+      swipeStartRef.current = { x: e.clientX, y: e.clientY };
+      swipeDecidedRef.current = null;
+    },
+    [isEditingName, isDragging],
+  );
+
+  const onSwipePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!swipeStartRef.current) return;
+      const dx = e.clientX - swipeStartRef.current.x;
+      const dy = e.clientY - swipeStartRef.current.y;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+
+      // Decide direction once we have enough movement
+      if (!swipeDecidedRef.current && (absDx > 8 || absDy > 8)) {
+        const angle = Math.atan2(absDy, absDx) * (180 / Math.PI);
+        // < 30° from horizontal → swipe; else → scroll
+        swipeDecidedRef.current = angle < 30 ? "swipe" : "scroll";
+        if (swipeDecidedRef.current === "swipe") {
+          setSwiping(true);
+        }
+      }
+
+      if (swipeDecidedRef.current === "swipe") {
+        e.preventDefault();
+        setSwipeX(dx);
+      }
+    },
+    [],
+  );
+
+  const onSwipePointerUp = useCallback(() => {
+    if (!swipeStartRef.current) return;
+    const wasSwipe = swipeDecidedRef.current === "swipe";
+    swipeStartRef.current = null;
+    swipeDecidedRef.current = null;
+
+    if (!wasSwipe) {
+      setSwiping(false);
+      setSwipeX(0);
+      return;
+    }
+
+    const rowW = swipeRowRef.current?.offsetWidth ?? 300;
+    // If swiped more than 30% of the row width → delete
+    if (Math.abs(swipeX) > rowW * 0.3) {
+      const dir = swipeX > 0 ? 1 : -1;
+      setSwipeOut(true);
+      setSwipeX(dir * rowW * 1.2);
+      setTimeout(() => onDelete(), 250);
+    } else {
+      // Snap back
+      setSwipeX(0);
+      setTimeout(() => setSwiping(false), 200);
+    }
+  }, [swipeX, onDelete]);
+
+  const onSwipePointerCancel = useCallback(() => {
+    swipeStartRef.current = null;
+    swipeDecidedRef.current = null;
+    setSwipeX(0);
+    setSwiping(false);
+  }, []);
+
   return (
     <div ref={setNodeRef} style={style}>
+      {/* Swipe-to-delete wrapper */}
+      <div
+        ref={swipeRowRef}
+        style={{
+          position: "relative",
+          overflow: "hidden",
+          // pan-y: browser handles vertical scroll, we handle horizontal swipe.
+          // Once actively swiping, lock to none to prevent any browser interference.
+          touchAction: swiping ? "none" : "pan-y",
+          WebkitUserSelect: swiping ? "none" : undefined,
+        }}
+        onPointerDown={onSwipePointerDown}
+        onPointerMove={onSwipePointerMove}
+        onPointerUp={onSwipePointerUp}
+        onPointerCancel={onSwipePointerCancel}
+        onContextMenu={(e) => { if (swiping) e.preventDefault(); }}
+      >
+        {/* Red background behind the item (revealed on swipe) */}
+        {(swiping || swipeOut) && (
+          <div
+            className="absolute inset-0 flex items-center"
+            style={{
+              background: "#ef4444",
+              justifyContent: swipeX >= 0 ? "flex-start" : "flex-end",
+              padding: "0 20px",
+            }}
+          >
+            <Trash2 className="w-5 h-5 text-white" />
+          </div>
+        )}
+        {/* Sliding content layer */}
+        <div
+          style={{
+            transform: `translateX(${swipeX}px)`,
+            transition: swiping && !swipeOut
+              ? (swipeStartRef.current ? "none" : "transform 200ms ease-out")
+              : swipeOut
+                ? "transform 250ms ease-in"
+                : undefined,
+            position: "relative",
+            zIndex: 1,
+            background: "var(--surface)",
+            willChange: swiping || swipeOut ? "transform" : undefined,
+          }}
+        >
       <div
         className={`flex items-center gap-2 px-4 py-2.5 transition-all ${
           isDragging && isTransferDragging
@@ -1383,6 +1510,8 @@ function SortableShoppingItem({
           </button>
         </div>
       </div>
+        </div>{/* end sliding content layer */}
+      </div>{/* end swipe wrapper */}
     </div>
   );
 }
@@ -3184,6 +3313,13 @@ export function EinkaufenScreen({
     );
   }, [selectedStore, updateItems]);
 
+  const handleDeleteItem = useCallback(
+    (itemId: string) => {
+      updateItems((prev) => prev.filter((i) => i.id !== itemId));
+    },
+    [updateItems],
+  );
+
   const handleAddStore = useCallback(
     (suggestion: StoreSuggestion) => {
       const id = suggestion.name
@@ -4011,6 +4147,7 @@ export function EinkaufenScreen({
                     onNameChange={(newName) =>
                       handleNameChange(item.id, newName)
                     }
+                    onDelete={() => handleDeleteItem(item.id)}
                     onEditingChange={setIsItemNameEditing}
                     animatingCheckId={animatingCheckId}
                     isTransferDragging={
