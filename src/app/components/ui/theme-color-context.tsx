@@ -8,8 +8,7 @@
  *      • Drawer offen: --zu-bg gedimmt mit bg-black/40 (simuliert Overlay)
  *
  *   2. document.body.backgroundColor — Android Gesture Bar (unten)
- *      • Normal:       --surface (Bottom-Nav-Farbe: Weiß / Dunkelgrau)
- *      • Drawer offen: --zu-bg gedimmt mit bg-black/40
+ *      • Immer --surface (Bottom-Nav bzw. Drawer-Boden)
  *
  * Reagiert automatisch auf:
  *   - Dark/Light-Mode-Wechsel (MutationObserver auf data-theme)
@@ -33,7 +32,7 @@ const ThemeColorContext = createContext<ThemeColorContextValue>({
   setDrawerOpen: () => {},
 });
 
-/* ── Hilfsfunktionen ────────────────���────────────────────────────── */
+/* ── Hilfsfunktionen ──────────────────────────────────────���─────── */
 
 /** Löst eine CSS Custom Property zu einem konkreten String auf. */
 function resolveCssVar(varName: string): string {
@@ -58,24 +57,17 @@ function setMetaThemeColor(color: string) {
 /** Setzt document.body.backgroundColor (Gesture Bar). */
 function setBodyBg(color: string) {
   /**
-   * Gesture-Bar-Fix: Chrome liest die Farbe aus dem untersten sichtbaren
-   * Pixel der Seite. Da #root (height:100% + overflow:hidden) und die
-   * position:fixed MainShell den Body komplett überlagern, muss die Farbe
-   * auf ALLEN drei Layern gleichzeitig gesetzt werden:
-   *   html  → unterste CSS-Schicht / Fallback
-   *   body  → primäre Quelle für Chromes Heuristik
-   *   #root → überlagert body normalerweise → braucht identische Farbe
+   * Gesture-Bar-Fix: Chrome Android liest die Gesture-Bar-Farbe aus dem
+   * untersten sichtbaren Pixel bzw. dem body-Hintergrund.
+   *
+   * Wir setzen `background` (Shorthand!) mit `!important` auf allen
+   * drei Layern, damit wir den CSS-Shorthand `background: var(--zu-bg)`
+   * aus index.css definitiv überschreiben.
    */
-  if (document.documentElement.style.backgroundColor !== color) {
-    document.documentElement.style.backgroundColor = color;
-  }
-  if (document.body.style.backgroundColor !== color) {
-    document.body.style.backgroundColor = color;
-  }
+  document.documentElement.style.setProperty("background", color, "important");
+  document.body.style.setProperty("background", color, "important");
   const root = document.getElementById("root");
-  if (root && root.style.backgroundColor !== color) {
-    root.style.backgroundColor = color;
-  }
+  if (root) root.style.setProperty("background", color, "important");
 }
 
 /** Erkennt ob Dark Mode aktiv ist (data-theme="dark" auf <html>). */
@@ -127,16 +119,11 @@ export function ThemeColorProvider({
     }
 
     // ── Gesture Bar (body background) ─────────────────────────────
-    // Normal:       --surface = Bottom-Nav-Farbe (Weiß / #1E1E1B)
-    // Drawer offen: --zu-bg gedimmt (passt zur Overlay-Stimmung)
-    if (drawerOpen) {
-      if (bgHex) setBodyBg(blendWithBlack(bgHex, 0.4));
-    } else {
-      const navBg = dark
-        ? resolveCssVar("--surface")   // Dark: #1E1E1B (Nav-Hintergrund)
-        : "#ffffff";                   // Light: Weiß (Bottom Nav Hintergrund)
-      if (navBg) setBodyBg(navBg);
-    }
+    // Immer --surface: die Bottom-Nav oder der Drawer-Boden ist immer
+    // das unterste sichtbare Element. Drawers haben bg-surface und
+    // ihre Rundung (rounded-t-[20px]) ist oben, nicht unten.
+    const surfaceHex = resolveCssVar("--surface");
+    if (surfaceHex) setBodyBg(surfaceHex);
   }, []);
 
   useEffect(() => {

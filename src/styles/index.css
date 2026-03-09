@@ -53,20 +53,14 @@ html, body {
 #root {
   height: 100%;
   overflow: hidden;
-  /* Gesture-Bar-Fix: #root überlagert html/body komplett.
-     Ohne explizite background-color ist #root transparent und
-     Chrome kann die body-Farbe für die Gesture Bar nicht lesen.
-     JS (ThemeColorProvider + App.tsx IIFE) setzt den korrekten
-     Wert dynamisch; dieser CSS-Wert ist der initiale Fallback. */
-  background-color: #ffffff; /* Light-Mode-Default = --surface */
+  /* Gesture-Bar-Fix: CSS-Fallback bis JS (ThemeColorProvider) übernimmt.
+     JS setzt `background !important` auf html/body/#root dynamisch. */
+  background: var(--surface);
   /* position: fixed is handled by MainShell with stable JS-based height
      to prevent keyboard-induced layout shifts */
 }
 
-/* Dark-Mode: #root bekommt --surface dark */
-[data-theme="dark"] #root {
-  background-color: #1E1E1B;
-}
+/* Dark-Mode-Fallback nicht mehr nötig — var(--surface) wechselt automatisch */
 
 /* ── Drawer / Bottom-Sheet Animation ─────────────────────────────── */
 /* CSS-Fallback (für nicht-Motion-Elemente); Motion-Screens nutzen    */
