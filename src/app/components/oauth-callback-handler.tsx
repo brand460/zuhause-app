@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "./supabase-client";
 import { Loader2 } from "lucide-react";
 
@@ -8,15 +8,12 @@ import { Loader2 } from "lucide-react";
  * Handles OAuth redirects from providers (Google, etc.)
  * Exchanges the authorization code for a session and hard-redirects to /
  *
- * Key rules:
- * - `processing` is initialised to `true` ONLY when we are actually on the
- *   callback path / have a `code` param – avoids spurious loading flash on
- *   every other page load.
- * - We never call setProcessing(false) while still on the callback page; we
- *   always perform a hard redirect so the app re-boots with a clean URL.
- * - If the exchange fails (e.g. the code was already consumed by
- *   detectSessionInUrl), we check whether Supabase already has a session and
- *   redirect anyway.  This prevents a blank-screen when both paths race.
+ * Key fixes:
+ * - useRef guard prevents double execution (React StrictMode / HMR)
+ * - exchangeCodeForSession is called exactly once
+ * - Falls back to getSession() if exchange fails (detectSessionInUrl race)
+ * - Detailed console logging for every step
+ * - Env var presence check logged on startup
  */
 
 // Detect once at module load so the initial useState value is synchronous.
@@ -32,101 +29,167 @@ export function OAuthCallbackHandler({
   // Start in "processing" state only when we are actually on the callback URL.
   const [processing, setProcessing] = useState(isCallbackPath);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const hasRun = useRef(false);
 
   useEffect(() => {
     // Not a callback page — nothing to do, children are already visible.
     if (!isCallbackPath) return;
 
+    // Guard: prevent double execution from StrictMode / HMR
+    if (hasRun.current) {
+      console.log("[OAuth] Callback bereits in Bearbeitung, überspringe doppelten Aufruf.");
+      return;
+    }
+    hasRun.current = true;
+
     const handleOAuthCallback = async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
 
-      console.log(
-        "[OAuth] Verarbeite Callback, code vorhanden:",
-        !!code
-      );
+      console.log("[OAuth] === Callback-Verarbeitung gestartet ===");
+      console.log("[OAuth] Pfad:", window.location.pathname);
+      console.log("[OAuth] Code vorhanden:", !!code);
+      console.log("[OAuth] Volle URL:", window.location.href);
+
+      // Log env var presence (not values!) for debugging
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+      console.log("[OAuth] VITE_SUPABASE_URL gesetzt:", !!supabaseUrl, supabaseUrl ? `(${supabaseUrl.substring(0, 30)}...)` : "(leer)");
+      console.log("[OAuth] VITE_SUPABASE_ANON_KEY gesetzt:", !!supabaseAnonKey, supabaseAnonKey ? `(${supabaseAnonKey.substring(0, 10)}...)` : "(leer)");
 
       try {
+        let exchangeSucceeded = false;
+
         if (code) {
-          // Attempt PKCE exchange.  This may fail if detectSessionInUrl already
-          // consumed the code — that is fine; we fall through to the session
-          // check below.
-          const { error: exchangeError } =
+          console.log("[OAuth] Starte exchangeCodeForSession...");
+          const { data, error: exchangeError } =
             await supabase.auth.exchangeCodeForSession(code);
 
           if (exchangeError) {
             console.warn(
-              "[OAuth] exchangeCodeForSession fehlgeschlagen (möglicherweise bereits verarbeitet):",
-              exchangeError.message
+              "[OAuth] exchangeCodeForSession fehlgeschlagen:",
+              exchangeError.message,
+              "| Status:", (exchangeError as any).status,
+              "| Code:", (exchangeError as any).code
             );
-            // Don't give up yet — Supabase's detectSessionInUrl may have
-            // already established the session.
+            // Don't give up — detectSessionInUrl may have already handled it.
           } else {
-            console.log("[OAuth] Session erfolgreich ausgetauscht.");
+            exchangeSucceeded = true;
+            console.log("[OAuth] exchangeCodeForSession erfolgreich.");
+            console.log("[OAuth] User ID:", data?.session?.user?.id);
+            console.log("[OAuth] Provider:", data?.session?.user?.app_metadata?.provider);
           }
+        } else {
+          console.log("[OAuth] Kein Code-Parameter vorhanden, prüfe bestehende Session...");
         }
 
-        // Whether the exchange above succeeded or not, check for a live session.
-        // detectSessionInUrl:true may have set it already.
+        // Whether the exchange succeeded or not, always verify session state.
+        console.log("[OAuth] Prüfe aktive Session via getSession()...");
         const {
           data: { session },
+          error: sessionError,
         } = await supabase.auth.getSession();
 
+        if (sessionError) {
+          console.error("[OAuth] getSession() Fehler:", sessionError.message);
+        }
+
         if (session) {
-          console.log(
-            "[OAuth] Session vorhanden, erstelle Profil falls nötig und leite weiter."
-          );
+          console.log("[OAuth] ✓ Aktive Session gefunden!");
+          console.log("[OAuth] User ID:", session.user.id);
+          console.log("[OAuth] Email:", session.user.email);
+          console.log("[OAuth] Provider:", session.user.app_metadata?.provider);
+          console.log("[OAuth] Session gültig bis:", session.expires_at ? new Date(session.expires_at * 1000).toISOString() : "unbekannt");
 
           // Create profile for first-time Google users if missing.
-          const { data: existing } = await supabase
-            .from("profiles")
-            .select("id")
-            .eq("id", session.user.id)
-            .maybeSingle();
-
-          if (!existing) {
-            const displayName =
-              session.user.user_metadata?.full_name ||
-              session.user.user_metadata?.name ||
-              session.user.email?.split("@")[0] ||
-              "Nutzer";
-
-            console.log(
-              "[OAuth] Neues Profil wird angelegt für:",
-              displayName
-            );
-
-            const { error: profileError } = await supabase
+          try {
+            const { data: existing } = await supabase
               .from("profiles")
-              .insert({ id: session.user.id, display_name: displayName });
+              .select("id")
+              .eq("id", session.user.id)
+              .maybeSingle();
 
-            if (profileError) {
-              console.error(
-                "[OAuth] Profil-Fehler (nicht kritisch):",
-                profileError.message
-              );
+            if (!existing) {
+              const displayName =
+                session.user.user_metadata?.full_name ||
+                session.user.user_metadata?.name ||
+                session.user.email?.split("@")[0] ||
+                "Nutzer";
+
+              console.log("[OAuth] Neues Profil wird angelegt für:", displayName);
+
+              const { error: profileError } = await supabase
+                .from("profiles")
+                .insert({ id: session.user.id, display_name: displayName });
+
+              if (profileError) {
+                console.error(
+                  "[OAuth] Profil-Fehler (nicht kritisch):",
+                  profileError.message
+                );
+              }
+            } else {
+              console.log("[OAuth] Profil existiert bereits.");
             }
+          } catch (profileErr) {
+            console.error("[OAuth] Profil-Check fehlgeschlagen (nicht kritisch):", profileErr);
           }
 
           // Hard redirect — clean URL, force full auth-state re-init.
+          console.log("[OAuth] Leite weiter zu / ...");
           window.location.replace("/");
           return;
         }
 
+        // Exchange failed AND no session found — but let's try one more thing:
+        // Wait briefly for detectSessionInUrl to finish (it runs async on init).
+        if (!exchangeSucceeded) {
+          console.log("[OAuth] Keine Session gefunden, warte 1.5s auf detectSessionInUrl...");
+          await new Promise((r) => setTimeout(r, 1500));
+
+          const { data: { session: retrySession } } = await supabase.auth.getSession();
+          if (retrySession) {
+            console.log("[OAuth] ✓ Session nach Wartezeit gefunden! Leite weiter...");
+            window.location.replace("/");
+            return;
+          }
+          console.error("[OAuth] Auch nach Wartezeit keine Session vorhanden.");
+        }
+
         // No session at all — show error briefly, then go to login.
-        console.error("[OAuth] Kein Session-Objekt nach Austausch.");
+        console.error("[OAuth] ✗ Kein Session-Objekt nach allen Versuchen.");
+        console.error("[OAuth] Mögliche Ursachen:");
+        console.error("[OAuth] - VITE_SUPABASE_URL oder VITE_SUPABASE_ANON_KEY fehlt in Vercel");
+        console.error("[OAuth] - Redirect URL in Supabase Dashboard nicht auf /auth/callback gesetzt");
+        console.error("[OAuth] - Google OAuth Provider nicht aktiviert im Supabase Dashboard");
+        console.error("[OAuth] - Der Authorization Code ist abgelaufen");
+        
         setErrorMsg(
           "Anmeldung fehlgeschlagen. Du wirst zur Anmeldeseite weitergeleitet…"
         );
         setTimeout(() => {
           window.location.replace("/");
-        }, 2500);
-      } catch (err) {
-        console.error("[OAuth] Unerwarteter Fehler:", err);
+        }, 3000);
+      } catch (err: any) {
+        console.error("[OAuth] ✗ Unerwarteter Fehler:", err);
+        console.error("[OAuth] Fehler-Details:", err?.message, err?.stack);
+        
+        // Last resort: check if there's somehow a session despite the error
+        try {
+          const { data: { session: fallbackSession } } = await supabase.auth.getSession();
+          if (fallbackSession) {
+            console.log("[OAuth] Session trotz Fehler vorhanden — leite weiter.");
+            window.location.replace("/");
+            return;
+          }
+        } catch (innerErr) {
+          console.error("[OAuth] Auch Fallback-Session-Check fehlgeschlagen:", innerErr);
+        }
+        
         setErrorMsg("Ein unerwarteter Fehler ist aufgetreten.");
         setTimeout(() => {
           window.location.replace("/");
-        }, 2500);
+        }, 3000);
       }
     };
 
