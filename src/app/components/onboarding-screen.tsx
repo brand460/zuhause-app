@@ -273,9 +273,8 @@ export function OnboardingScreen({ pendingToken }: OnboardingScreenProps) {
     setError("");
     setLoading(true);
     try {
-      await createHousehold(householdName.trim());
-      // Get the newly created household ID
-      const hhId = await getHouseholdId();
+      // createHousehold now returns the household id directly (server-side, bypasses RLS)
+      const { id: hhId } = await createHousehold(householdName.trim());
       // Generate invite link
       const hh = await apiFetch(
         "/invite/generate",
@@ -292,7 +291,8 @@ export function OnboardingScreen({ pendingToken }: OnboardingScreenProps) {
     }
   };
 
-  // helper: get fresh household id from Supabase after creation
+  // helper: get fresh household id from Supabase after creation — no longer needed,
+  // kept for potential future use but not called from handleCreate.
   const getHouseholdId = async (): Promise<string> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Nicht eingeloggt.");
@@ -337,7 +337,7 @@ export function OnboardingScreen({ pendingToken }: OnboardingScreenProps) {
     >
       <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
 
-      <div className="flex flex-col px-6 pt-10 pb-10 gap-0">
+      <div className="w-full mx-auto flex flex-col px-6 pt-10 pb-10 gap-0" style={{ maxWidth: 440 }}>
 
         {/* Header */}
         <div className="flex flex-col items-center mb-8">

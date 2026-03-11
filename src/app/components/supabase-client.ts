@@ -17,14 +17,44 @@ export const supabase: ReturnType<typeof createClient> =
 
 export const API_BASE = `${supabaseUrl}/functions/v1/make-server-2a26506b`;
 
-export async function apiFetch(path: string, options: RequestInit = {}) {
-  // Use the current session token when available, fall back to publicAnonKey.
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token ?? publicAnonKey;
+// ── Single in-flight refresh guard ─────────────────────────────────
+// Prevents concurrent apiFetch calls from calling refreshSession() multiple
+// times simultaneously (would invalidate the refresh token on the 2nd call).
+let _refreshPromise: Promise<string | null> | null = null;
 
+async function getFreshToken(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    return publicAnonKey;
+  }
+
+  // Check if token is still valid for more than 30 seconds
+  const nowSec = Math.floor(Date.now() / 1000);
+  const expiresAt = session.expires_at ?? 0;
+  if (expiresAt - nowSec > 30) {
+    return session.access_token;
+  }
+
+  // Token expiring soon — refresh exactly once, even if multiple callers race
+  if (!_refreshPromise) {
+    _refreshPromise = supabase.auth
+      .refreshSession()
+      .then(({ data }) => data.session?.access_token ?? null)
+      .catch(() => null)
+      .finally(() => { _refreshPromise = null; });
+  }
+
+  const newToken = await _refreshPromise;
+  return newToken ?? session.access_token ?? publicAnonKey;
+}
+
+export async function apiFetch(path: string, options: RequestInit = {}) {
   const url = `${API_BASE}${path}`;
   const MAX_RETRIES = 5;
   const RETRY_DELAY = 1500;
+
+  let token = await getFreshToken();
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let res: Response;
@@ -38,13 +68,24 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
         },
       });
     } catch (networkErr) {
-      // Retry on transient network errors (cold start, connection reset)
       if (attempt < MAX_RETRIES) {
         console.log(`[apiFetch] Netzwerkfehler bei ${path} (Versuch ${attempt}/${MAX_RETRIES}), retry in ${RETRY_DELAY}ms...`);
         await new Promise((r) => setTimeout(r, RETRY_DELAY * attempt));
         continue;
       }
       throw new Error(`Netzwerkfehler bei ${options.method || "GET"} ${path}: ${networkErr}`);
+    }
+
+    // On 401: force a session refresh once, then retry
+    if (res.status === 401 && attempt === 1) {
+      console.log(`[apiFetch] 401 bei ${path} — erzwinge Token-Refresh und retry...`);
+      try {
+        const { data } = await supabase.auth.refreshSession();
+        token = data.session?.access_token ?? publicAnonKey;
+      } catch {
+        token = publicAnonKey;
+      }
+      continue;
     }
 
     // Retry on 5xx or 0 status (server error / edge function cold start)

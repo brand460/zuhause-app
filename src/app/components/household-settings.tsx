@@ -16,7 +16,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useAuth } from "./auth-context";
-import { apiFetch } from "./supabase-client";
+import { supabase, apiFetch } from "./supabase-client";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface Member {
@@ -116,37 +116,62 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
 
   const isOwner = myRole === "admin";
 
-  // Load members
+  // ── Load members — direct Supabase calls, JWT auto-managed ────
   const loadMembers = useCallback(async () => {
-    if (!household) return;
+    if (!household || !user) return;
     setMembersLoading(true);
     setMembersError("");
     try {
-      const res = await apiFetch(`/household/${household.id}/members`);
-      setMembers(res.members || []);
-      setMyRole(res.my_role || "member");
+      // 1. Get all members of this household (joined with profiles)
+      const { data: rows, error: rowsErr } = await supabase
+        .from("household_members")
+        .select("user_id, role, profiles(display_name)")
+        .eq("household_id", household.id);
+
+      if (rowsErr) {
+        console.log("loadMembers: household_members error:", rowsErr.message);
+        throw new Error(`Mitglieder konnten nicht geladen werden: ${rowsErr.message}`);
+      }
+
+      const mapped: Member[] = (rows || []).map((r: any) => ({
+        user_id: r.user_id,
+        role: r.role,
+        display_name: r.profiles?.display_name || "Unbekannt",
+        is_me: r.user_id === user.id,
+      }));
+
+      setMembers(mapped);
+
+      const me = mapped.find(m => m.is_me);
+      setMyRole(me?.role || "member");
     } catch (err: any) {
-      console.log("Load members error:", err);
+      console.log("loadMembers error:", err);
       setMembersError(err?.message || "Fehler beim Laden der Mitglieder.");
     } finally {
       setMembersLoading(false);
     }
-  }, [household]);
+  }, [household, user]);
 
   useEffect(() => {
     loadMembers();
   }, [loadMembers]);
 
-  // ── Save household name ──────────────────────────────────────
+  // ── Save household name — direct Supabase call ────────────────
   const saveName = async () => {
     if (!nameValue.trim() || !household) return;
     setNameSaving(true);
     setNameError("");
     try {
-      await apiFetch(`/household/${household.id}/name`, {
-        method: "PUT",
-        body: JSON.stringify({ name: nameValue.trim() }),
-      });
+      const { error } = await supabase
+        .from("households")
+        .update({ name: nameValue.trim() })
+        .eq("id", household.id);
+
+      if (error) {
+        console.log("saveName error:", error.message);
+        throw new Error(`Umbenennen fehlgeschlagen: ${error.message}`);
+      }
+
       await refreshProfile();
       setEditingName(false);
     } catch (err: any) {
@@ -157,7 +182,7 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
     }
   };
 
-  // ── Generate invite link ─────────────────────────────────────
+  // ── Generate invite link — via apiFetch (needs server-side token) ─
   const generateInvite = async () => {
     if (!household) return;
     setInviteLoading(true);
@@ -205,13 +230,23 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
     }
   };
 
-  // ── Leave household ──────────────────────────────────────────
+  // ── Leave household — direct Supabase call ────────────────────
   const handleLeave = async () => {
-    if (!household) return;
+    if (!household || !user) return;
     setActionLoading(true);
     setActionError("");
     try {
-      await apiFetch(`/household/${household.id}/leave`, { method: "POST" });
+      const { error } = await supabase
+        .from("household_members")
+        .delete()
+        .eq("household_id", household.id)
+        .eq("user_id", user.id);
+
+      if (error) {
+        console.log("handleLeave error:", error.message);
+        throw new Error(`Verlassen fehlgeschlagen: ${error.message}`);
+      }
+
       await refreshProfile();
     } catch (err: any) {
       console.log("Leave error:", err);
@@ -221,13 +256,34 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
     }
   };
 
-  // ── Delete household ─────────────────────────────────────────
+  // ── Delete household — direct Supabase calls ──────────────────
   const handleDelete = async () => {
     if (!household) return;
     setActionLoading(true);
     setActionError("");
     try {
-      await apiFetch(`/household/${household.id}`, { method: "DELETE" });
+      // 1. Remove all members first
+      const { error: membersErr } = await supabase
+        .from("household_members")
+        .delete()
+        .eq("household_id", household.id);
+
+      if (membersErr) {
+        console.log("handleDelete: members delete error:", membersErr.message);
+        throw new Error(`Mitglieder konnten nicht entfernt werden: ${membersErr.message}`);
+      }
+
+      // 2. Delete the household itself
+      const { error: hhErr } = await supabase
+        .from("households")
+        .delete()
+        .eq("id", household.id);
+
+      if (hhErr) {
+        console.log("handleDelete: household delete error:", hhErr.message);
+        throw new Error(`Haushalt konnte nicht gelöscht werden: ${hhErr.message}`);
+      }
+
       await refreshProfile();
     } catch (err: any) {
       console.log("Delete error:", err);
@@ -520,6 +576,7 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
             title="Zuhause verlassen?"
             description="Du verlässt diesen Haushalt und musst erneut eingeladen werden."
             confirmLabel="Verlassen"
+            danger
             loading={actionLoading}
             onConfirm={handleLeave}
             onCancel={() => setConfirmLeave(false)}
@@ -568,39 +625,31 @@ function ConfirmDialog({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="absolute inset-0 flex items-end justify-center"
-      style={{ zIndex: 1000, background: "rgba(0,0,0,0.4)" }}
-      onPointerDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40"
+      onClick={onCancel}
     >
       <motion.div
-        initial={{ y: "100%" }}
-        animate={{ y: 0 }}
-        exit={{ y: "100%" }}
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
-        className="w-full"
+        className="bg-surface w-[320px] mx-4 p-6"
         style={{
-          background: "var(--surface)",
-          borderRadius: "20px 20px 0 0",
-          padding: "24px 24px calc(24px + env(safe-area-inset-bottom, 0px))",
+          borderRadius: "var(--radius-card)",
+          boxShadow: "var(--shadow-elevated)",
         }}
-        onTouchMove={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-center mb-6">
-          <h2 className="font-bold text-text-1 mb-1" style={{ fontSize: 18 }}>{title}</h2>
-          <p className="text-sm" style={{ color: "var(--text-3)" }}>{description}</p>
-        </div>
-        <div className="flex justify-center gap-3">
+        <h3 className="text-base font-bold text-text-1 text-center">{title}</h3>
+        <p className="text-sm text-center mt-2" style={{ color: "var(--text-3)" }}>
+          {description}
+        </p>
+        <div className="flex justify-center gap-3 mt-5">
           <button
             type="button"
             onClick={onCancel}
             disabled={loading}
-            className="flex-1 py-3 font-semibold text-sm transition active:scale-95 disabled:opacity-50"
-            style={{
-              background: "var(--surface-2)",
-              borderRadius: "var(--radius-btn)",
-              color: "var(--text-2)",
-              maxWidth: 160,
-            }}
+            className="flex-1 py-2.5 rounded-full bg-surface-2 text-text-1 text-sm font-semibold transition active:scale-95 disabled:opacity-50"
           >
             Abbrechen
           </button>
@@ -608,12 +657,7 @@ function ConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={loading}
-            className="flex-1 py-3 font-semibold text-sm text-white transition active:scale-95 disabled:opacity-50"
-            style={{
-              background: danger ? "var(--danger)" : "var(--accent)",
-              borderRadius: "var(--radius-btn)",
-              maxWidth: 160,
-            }}
+            className={`flex-1 py-2.5 rounded-full text-white text-sm font-semibold transition active:scale-95 disabled:opacity-50 ${danger ? "bg-danger" : "bg-accent"}`}
           >
             {loading
               ? <Loader2 className="w-4 h-4 animate-spin mx-auto" />

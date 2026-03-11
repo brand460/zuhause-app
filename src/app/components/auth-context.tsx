@@ -24,7 +24,7 @@ interface AuthContextType {
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
-  createHousehold: (name: string) => Promise<void>;
+  createHousehold: (name: string) => Promise<{ id: string }>;
   joinHousehold: (inviteCode: string) => Promise<void>;
   joinByToken: (token: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -174,33 +174,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setHousehold(null);
   };
 
-  const createHousehold = async (name: string) => {
+  const createHousehold = async (name: string): Promise<{ id: string }> => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (!authUser) throw new Error("Nicht autorisiert — kein Benutzer gefunden.");
 
-    console.log("createHousehold: calling RPC with household_name:", name || "Mein Haushalt", "user:", authUser.id);
+    const householdName = name?.trim() || "Mein Haushalt";
 
-    // Call the database function that handles household + member creation
-    const { data: householdId, error: rpcError } = await supabase
-      .rpc("create_household", { household_name: name || "Mein Haushalt" });
+    // Generate ID client-side so we always have it regardless of RLS RETURNING behaviour
+    const householdId = crypto.randomUUID();
 
-    console.log("createHousehold: RPC result — data:", householdId, "error:", rpcError);
+    console.log("createHousehold: inserting household, id:", householdId, "user:", authUser.id);
 
-    if (rpcError) {
-      const detail = `code=${rpcError.code} hint=${rpcError.hint} details=${rpcError.details} message=${rpcError.message}`;
-      console.log("Household creation RPC error (full):", JSON.stringify(rpcError));
-      throw new Error(`RPC create_household fehlgeschlagen: ${detail}`);
+    // Step 1 — insert household (Supabase client manages JWT automatically)
+    const { error: hhErr } = await supabase
+      .from("households")
+      .insert({ id: householdId, name: householdName, created_by: authUser.id });
+
+    if (hhErr) {
+      console.log("createHousehold: households insert error:", hhErr);
+      throw new Error(`Haushalt konnte nicht erstellt werden: ${hhErr.message}`);
     }
 
-    if (!householdId) {
-      throw new Error("RPC create_household gab keine household_id zurück.");
+    // Step 2 — insert creator as admin member
+    const { error: memberErr } = await supabase
+      .from("household_members")
+      .insert({ household_id: householdId, user_id: authUser.id, role: "admin" });
+
+    if (memberErr) {
+      console.log("createHousehold: household_members insert error:", memberErr);
+      // Rollback household
+      await supabase.from("households").delete().eq("id", householdId);
+      throw new Error(`Mitglied konnte nicht hinzugefügt werden: ${memberErr.message}`);
     }
 
-    console.log("createHousehold: success, householdId:", householdId, "— reloading profile");
+    console.log("createHousehold: success, id:", householdId);
 
-    // The DB function already created the household and added the user as admin.
-    // Reload state to pick up the new household.
-    await loadProfile(authUser.id);
+    // Build household object from known data — no SELECT needed, no RLS issue
+    const hh: Household = {
+      id: householdId,
+      name: householdName,
+      created_by: authUser.id,
+      invite_code: "",
+    };
+
+    setHousehold(hh);
+    return { id: householdId };
   };
 
   const joinHousehold = async (inviteCode: string) => {

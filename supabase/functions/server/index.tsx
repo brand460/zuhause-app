@@ -569,6 +569,49 @@ app.post("/make-server-2a26506b/invite/accept", async (c) => {
 
 // ── Household management endpoints ────────────────────────────────
 
+// Create household + add creator as admin (uses service role → bypasses RLS)
+app.post("/make-server-2a26506b/household/create", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) return c.json({ error: "Nicht autorisiert." }, 401);
+
+    const { name } = await c.req.json();
+    if (!name?.trim()) return c.json({ error: "Name darf nicht leer sein." }, 400);
+
+    const admin = supabaseAdmin();
+
+    // 1. Insert household
+    const { data: hh, error: hhErr } = await admin
+      .from("households")
+      .insert({ name: name.trim(), created_by: user.id })
+      .select()
+      .single();
+
+    if (hhErr || !hh) {
+      console.log("household/create: households insert error:", hhErr);
+      return c.json({ error: `Haushalt konnte nicht erstellt werden: ${hhErr?.message}` }, 500);
+    }
+
+    // 2. Insert creator as admin member
+    const { error: memberErr } = await admin
+      .from("household_members")
+      .insert({ household_id: hh.id, user_id: user.id, role: "admin" });
+
+    if (memberErr) {
+      console.log("household/create: household_members insert error:", memberErr);
+      // Rollback: delete the household we just created
+      await admin.from("households").delete().eq("id", hh.id);
+      return c.json({ error: `Mitglied konnte nicht hinzugefügt werden: ${memberErr.message}` }, 500);
+    }
+
+    console.log("household/create: success, id:", hh.id, "user:", user.id);
+    return c.json({ ok: true, household: hh });
+  } catch (err) {
+    console.log("POST /household/create error:", err);
+    return c.json({ error: `Unerwarteter Fehler beim Erstellen: ${err}` }, 500);
+  }
+});
+
 // Get members of a household
 app.get("/make-server-2a26506b/household/:id/members", async (c) => {
   try {

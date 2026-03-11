@@ -69,6 +69,7 @@ import {
 } from "../use-kv-realtime";
 import { useBackHandler } from "../ui/use-back-handler";
 import { useKeyboardHeight } from "./use-keyboard-height";
+import bagFilledRaw from "../../../imports/bag-filled.svg?raw";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface StoreSettingEntry {
@@ -2039,29 +2040,17 @@ function CheckedSection({
       className="bg-surface-2"
       style={{ borderTop: "1px solid var(--zu-border)" }}
     >
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center justify-between px-4 py-2.5"
-      >
-        <span className="text-xs font-medium text-text-2">
-          Erledigt ({items.length})
-        </span>
-        {expanded ? (
-          <ChevronUp className="w-3.5 h-3.5 text-text-3" />
-        ) : (
-          <ChevronDown className="w-3.5 h-3.5 text-text-3" />
-        )}
-      </button>
+      {/* Content ABOVE the header — expands upward */}
       <AnimatePresence>
         {expanded && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.22, ease: [0.25, 1, 0.5, 1] }}
             className="overflow-hidden"
           >
-            <div className="max-h-40 overflow-y-auto">
+            <div>
               {items.map((item) => (
                 <div
                   key={item.id}
@@ -2085,7 +2074,7 @@ function CheckedSection({
                 </div>
               ))}
             </div>
-            <div className="px-4 py-2">
+            <div className="px-4 pb-3 pt-1">
               <button
                 onClick={onClearAll}
                 className="flex items-center gap-1.5 text-xs text-danger hover:text-danger transition"
@@ -2097,6 +2086,20 @@ function CheckedSection({
           </motion.div>
         )}
       </AnimatePresence>
+      {/* Header always at the bottom */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-4 py-2.5"
+      >
+        <span className="text-xs font-medium text-text-2">
+          Erledigt ({items.length})
+        </span>
+        {expanded ? (
+          <ChevronDown className="w-3.5 h-3.5 text-text-3" />
+        ) : (
+          <ChevronUp className="w-3.5 h-3.5 text-text-3" />
+        )}
+      </button>
     </div>
   );
 }
@@ -2905,10 +2908,15 @@ export function EinkaufenScreen({
   const [storeSelectorH, setStoreSelectorH] = useState(82);
   // addItemBarH: pixel height of the AddItemBar (bottom anchor for list)
   const addItemBarHRef = useRef(60);
-  // listBottomFixed: dynamic CSS `bottom` value for the list container
-  //   keyboard closed → addItemBarH
-  //   keyboard open   → keyboardHeight + addItemBarH
+  // checkedSectionH: pixel height of the CheckedSection sticky bar
+  const checkedSectionHRef = useRef(0);
+  // listBottomFixed: dynamic CSS `bottom` for the scroll container
+  //   keyboard closed → addItemBarH + checkedSectionH
+  //   keyboard open   → keyboardHeight + addItemBarH + checkedSectionH
   const [listBottomFixed, setListBottomFixed] = useState(60);
+  // checkedSectionBottom: CSS `bottom` for the CheckedSection absolute element
+  //   = kbOffset + addItemBarH  (no checkedSectionH, it sits on top of AddItemBar)
+  const [checkedSectionBottom, setCheckedSectionBottom] = useState(60);
   // kbOffset: keyboard height relative to the container (not the screen).
   // Used to position the AddItemBar above the keyboard so the browser
   // doesn't auto-scroll the fixed layout to reveal the focused input.
@@ -4032,7 +4040,10 @@ export function EinkaufenScreen({
     const barH = isItemNameEditingRef.current
       ? 0
       : addItemBarHRef.current;
-    setListBottomFixed(isKbOpen ? kbH + barH : barH);
+    const checkedH = checkedSectionHRef.current;
+    const base = isKbOpen ? kbH + barH : barH;
+    setCheckedSectionBottom(base);
+    setListBottomFixed(base + checkedH);
   }, []);
 
   // ── Measure store-selector height ─────────────────────────────
@@ -4057,6 +4068,19 @@ export function EinkaufenScreen({
       updateListBottom();
     });
     ro.observe(bottomBarRef.current);
+    return () => ro.disconnect();
+  }, [updateListBottom]);
+
+  // ── Measure checked-section height; update listBottom on change ──
+  useEffect(() => {
+    if (!checkedSectionRef.current) return;
+    const ro = new ResizeObserver(() => {
+      const h =
+        checkedSectionRef.current?.getBoundingClientRect().height ?? 0;
+      checkedSectionHRef.current = h;
+      updateListBottom();
+    });
+    ro.observe(checkedSectionRef.current);
     return () => ro.disconnect();
   }, [updateListBottom]);
 
@@ -4180,7 +4204,7 @@ export function EinkaufenScreen({
           left: 0,
           right: 0,
           bottom: listBottomFixed,
-          overflowY: "auto",
+          overflowY: sortedStoreItems.length > 0 ? "auto" : "hidden",
           WebkitOverflowScrolling: "touch",
           overscrollBehavior: "contain",
         }}
@@ -4192,60 +4216,55 @@ export function EinkaufenScreen({
         ) : sortedStoreItems.length === 0 &&
           checkedItems.length === 0 ? (
           <div
-            className="flex flex-col items-center justify-center py-20 px-6"
+            className="flex flex-col items-center px-6 pt-20 pb-20"
             style={{ minHeight: "100%" }}
           >
+            {/* bag-3.svg inlined */}
             <svg
-              width="120"
+              viewBox="0 0 509.04 718.44"
+              width="92"
               height="130"
-              viewBox="0 0 435 471"
-              fill="none"
               xmlns="http://www.w3.org/2000/svg"
               className="mb-5"
               aria-hidden="true"
             >
-              {/* Top folded flap */}
-              <path d="M333.5 22.5002L331 46.5002H103.5L101 22.5002L43 0.500244H164C164 17.621 187.953 31.5002 217.5 31.5002C247.047 31.5002 271 17.621 271 0.500244H392L333.5 22.5002Z" fill="var(--bag-flap)" />
-              {/* Left corner dark triangle */}
-              <path d="M101 22.5L103.5 46.5H17.5L101 22.5Z" fill="var(--bag-shadow)" />
-              {/* Right corner dark triangle */}
-              <path d="M333.5 22.5L331 46.5H417L333.5 22.5Z" fill="var(--bag-shadow)" />
-              {/* Left corner light fold */}
-              <path d="M42.5 0L101 22.5L43 39L42.5 0Z" fill="var(--bag-fold)" />
-              {/* Right corner light fold */}
-              <path d="M392 0L333.5 22.5L391.5 39L392 0Z" fill="var(--bag-fold)" />
-              {/* Bag body */}
-              <path d="M435 470.5H0L17.5 46.5H154.006C154.471 66.4279 182.72 82.5 217.5 82.5C252.28 82.5 280.529 66.4279 280.994 46.5H417L435 470.5Z" fill="var(--bag-body)" />
-              {/* Handle opening shadow — fixed anti-aliasing seam */}
-              <path d="M280.994 45.5C280.998 45.6664 281 45.8331 281 46C281 66.1584 252.57 82.5 217.5 82.5C182.43 82.5 154 66.1584 154 46C154 45.8331 154.002 45.6664 154.006 45.5H280.994Z" fill="var(--bag-flap)" />
+              <path fill="#b5855d" d="M361.77,270.44l-2.5,24h-227.5l-2.5-24-58-22h121c0,17.12,23.95,31,53.5,31s53.5-13.88,53.5-31h121l-58.5,22Z"/>
+              <path fill="#94704e" d="M129.27,270.44l2.5,24H45.77l83.5-24Z"/>
+              <path fill="#94704e" d="M361.77,270.44l-2.5,24h86l-83.5-24Z"/>
+              <path fill="#c59066" d="M70.77,247.94l58.5,22.5-58,16.5-.5-39Z"/>
+              <path fill="#c59066" d="M420.27,247.94l-58.5,22.5,58,16.5.5-39Z"/>
+              <path fill="#b5855d" d="M309.26,293.44c0,.17,0,.33,0,.5,0,20.16-28.43,36.5-63.5,36.5s-63.5-16.34-63.5-36.5c0-.17,0-.33,0-.5h126.99Z"/>
+              <path fill="#d3b08a" d="M463.27,718.44H28.27l17.5-424h136.51c.46,19.93,28.71,36,63.49,36s63.03-16.07,63.49-36h136.01l18,424Z"/>
             </svg>
             <p className="text-base font-semibold text-text-1">
               Liste ist leer
             </p>
-            <p className="text-sm text-text-2 mt-1 text-center">
-              Füge unten Artikel hinzu, um deine Einkaufsliste
-              zu starten.
-            </p>
+            
           </div>
         ) : sortedStoreItems.length === 0 &&
           checkedItems.length > 0 ? (
           <div
-            className="flex flex-col items-center justify-center py-20 px-6"
+            className="flex flex-col items-center px-6 pt-20 pb-20"
             style={{ minHeight: "100%" }}
           >
-            <div className="w-14 h-14 rounded-xl bg-accent-light flex items-center justify-center mb-3">
-              <Check className="w-7 h-7 text-accent" />
-            </div>
+            <div
+              className="mb-5"
+              style={{ width: 92, height: 130, flexShrink: 0, overflow: "hidden" }}
+              aria-hidden="true"
+              dangerouslySetInnerHTML={{
+                __html: bagFilledRaw
+                  .replace(/\bwidth="[^"]*"/, "")
+                  .replace(/\bheight="[^"]*"/, "")
+                  .replace(
+                    "<svg",
+                    '<svg width="92" height="130" style="display:block;width:92px;height:130px"',
+                  ),
+              }}
+            />
             <p className="text-base font-semibold text-text-1">
               Alles erledigt!
             </p>
-            <p className="text-sm text-text-2 mt-1 text-center">
-              {checkedItems.length}{" "}
-              {checkedItems.length === 1
-                ? "Artikel wurde"
-                : "Artikel wurden"}{" "}
-              abgehakt.
-            </p>
+            
             <button
               onClick={handleClearChecked}
               className="mt-4 flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-dark active:scale-95 transition"
@@ -4300,14 +4319,24 @@ export function EinkaufenScreen({
           </SortableContext>
         </StableDndContext>
 
-        {/* Checked items — always at the end of the scroll area */}
-        <div ref={checkedSectionRef}>
-          <CheckedSection
-            items={checkedItems}
-            onToggle={handleToggle}
-            onClearAll={handleClearChecked}
-          />
-        </div>
+      </div>
+
+      {/* ── CheckedSection — absolute, sits directly above AddItemBar ── */}
+      <div
+        ref={checkedSectionRef}
+        style={{
+          position: "absolute",
+          bottom: checkedSectionBottom,
+          left: 0,
+          right: 0,
+          zIndex: 90,
+        }}
+      >
+        <CheckedSection
+          items={checkedItems}
+          onToggle={handleToggle}
+          onClearAll={handleClearChecked}
+        />
       </div>
 
       {/* ── AddItemBar ──────────────────────────────────────────────────
