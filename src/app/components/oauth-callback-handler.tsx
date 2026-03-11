@@ -4,124 +4,186 @@ import { Loader2 } from "lucide-react";
 
 /**
  * OAuth Callback Handler
- * 
+ *
  * Handles OAuth redirects from providers (Google, etc.)
- * Exchanges the authorization code for a session
+ * Exchanges the authorization code for a session and hard-redirects to /
+ *
+ * Key rules:
+ * - `processing` is initialised to `true` ONLY when we are actually on the
+ *   callback path / have a `code` param – avoids spurious loading flash on
+ *   every other page load.
+ * - We never call setProcessing(false) while still on the callback page; we
+ *   always perform a hard redirect so the app re-boots with a clean URL.
+ * - If the exchange fails (e.g. the code was already consumed by
+ *   detectSessionInUrl), we check whether Supabase already has a session and
+ *   redirect anyway.  This prevents a blank-screen when both paths race.
  */
-export function OAuthCallbackHandler({ children }: { children: React.ReactNode }) {
-  const [processing, setProcessing] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+// Detect once at module load so the initial useState value is synchronous.
+const isCallbackPath =
+  window.location.pathname === "/auth/callback" ||
+  new URLSearchParams(window.location.search).has("code");
+
+export function OAuthCallbackHandler({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  // Start in "processing" state only when we are actually on the callback URL.
+  const [processing, setProcessing] = useState(isCallbackPath);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    // Not a callback page — nothing to do, children are already visible.
+    if (!isCallbackPath) return;
+
     const handleOAuthCallback = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+
+      console.log(
+        "[OAuth] Verarbeite Callback, code vorhanden:",
+        !!code
+      );
+
       try {
-        // Check if we're on the callback path or have OAuth params
-        const isCallbackPath = window.location.pathname === "/auth/callback";
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get("code");
-        
-        // Only process if we're on callback path or have a code
-        if (!isCallbackPath && !code) {
-          setProcessing(false);
-          return;
+        if (code) {
+          // Attempt PKCE exchange.  This may fail if detectSessionInUrl already
+          // consumed the code — that is fine; we fall through to the session
+          // check below.
+          const { error: exchangeError } =
+            await supabase.auth.exchangeCodeForSession(code);
+
+          if (exchangeError) {
+            console.warn(
+              "[OAuth] exchangeCodeForSession fehlgeschlagen (möglicherweise bereits verarbeitet):",
+              exchangeError.message
+            );
+            // Don't give up yet — Supabase's detectSessionInUrl may have
+            // already established the session.
+          } else {
+            console.log("[OAuth] Session erfolgreich ausgetauscht.");
+          }
         }
 
-        console.log("[OAuth] Processing callback with code:", code?.substring(0, 10) + "...");
+        // Whether the exchange above succeeded or not, check for a live session.
+        // detectSessionInUrl:true may have set it already.
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
-        // Exchange the code for a session
-        const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code || "");
+        if (session) {
+          console.log(
+            "[OAuth] Session vorhanden, erstelle Profil falls nötig und leite weiter."
+          );
 
-        if (exchangeError) {
-          console.error("[OAuth] Exchange error:", exchangeError);
-          setError(exchangeError.message);
-          setProcessing(false);
-          
-          // Redirect to root after error
-          setTimeout(() => {
-            window.location.href = "/";
-          }, 2000);
-          return;
-        }
-
-        if (data?.session) {
-          console.log("[OAuth] Session established successfully for user:", data.user?.email);
-          
-          // Check if this is a new user (no profile yet)
-          const { data: existingProfile } = await supabase
+          // Create profile for first-time Google users if missing.
+          const { data: existing } = await supabase
             .from("profiles")
             .select("id")
-            .eq("id", data.user.id)
+            .eq("id", session.user.id)
             .maybeSingle();
 
-          // Create profile if it doesn't exist (for Google OAuth first-time users)
-          if (!existingProfile && data.user) {
-            const displayName = data.user.user_metadata?.full_name || 
-                               data.user.user_metadata?.name || 
-                               data.user.email?.split("@")[0] || 
-                               "Nutzer";
+          if (!existing) {
+            const displayName =
+              session.user.user_metadata?.full_name ||
+              session.user.user_metadata?.name ||
+              session.user.email?.split("@")[0] ||
+              "Nutzer";
 
-            console.log("[OAuth] Creating profile for new user:", displayName);
+            console.log(
+              "[OAuth] Neues Profil wird angelegt für:",
+              displayName
+            );
 
             const { error: profileError } = await supabase
               .from("profiles")
-              .insert({ 
-                id: data.user.id, 
-                display_name: displayName 
-              });
+              .insert({ id: session.user.id, display_name: displayName });
 
             if (profileError) {
-              console.error("[OAuth] Profile creation error:", profileError);
-              // Don't fail the whole flow, profile can be created later
+              console.error(
+                "[OAuth] Profil-Fehler (nicht kritisch):",
+                profileError.message
+              );
             }
           }
 
-          // Clean URL and redirect to root
-          window.history.replaceState({}, "", "/");
-          
-          // Force reload to trigger auth state change
-          window.location.href = "/";
-        } else {
-          console.warn("[OAuth] No session returned from exchange");
-          setProcessing(false);
+          // Hard redirect — clean URL, force full auth-state re-init.
+          window.location.replace("/");
+          return;
         }
-      } catch (err) {
-        console.error("[OAuth] Unexpected error:", err);
-        setError("Ein unerwarteter Fehler ist aufgetreten.");
-        setProcessing(false);
-        
-        // Redirect to root after error
+
+        // No session at all — show error briefly, then go to login.
+        console.error("[OAuth] Kein Session-Objekt nach Austausch.");
+        setErrorMsg(
+          "Anmeldung fehlgeschlagen. Du wirst zur Anmeldeseite weitergeleitet…"
+        );
         setTimeout(() => {
-          window.location.href = "/";
-        }, 2000);
+          window.location.replace("/");
+        }, 2500);
+      } catch (err) {
+        console.error("[OAuth] Unerwarteter Fehler:", err);
+        setErrorMsg("Ein unerwarteter Fehler ist aufgetreten.");
+        setTimeout(() => {
+          window.location.replace("/");
+        }, 2500);
       }
     };
 
     handleOAuthCallback();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Show loading state while processing OAuth callback
+  // Show loading / error screen while processing the callback.
+  // We intentionally keep `processing = true` until the hard redirect so
+  // children (AuthProvider / AppRouter) are NEVER rendered on the callback URL.
   if (processing) {
     return (
       <div
-        className="flex flex-col items-center justify-center font-sans"
-        style={{ height: "100dvh", background: "var(--zu-bg)" }}
+        className="flex flex-col items-center justify-center font-sans gap-3"
+        style={{ height: "100dvh", background: "var(--zu-bg, #F7F7F5)" }}
       >
+        {/* App icon */}
         <svg
-          width="56" height="56" viewBox="0 0 72 72"
-          fill="none" xmlns="http://www.w3.org/2000/svg"
-          style={{ marginBottom: 16 }}
+          width="56"
+          height="56"
+          viewBox="0 0 72 72"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
         >
-          <rect width="72" height="72" rx="20" fill="var(--accent)" />
-          <path d="M36 16L56 33H50V56H40V44H32V56H22V33H16L36 16Z" fill="white" fillOpacity="0.95" />
+          <rect width="72" height="72" rx="20" fill="var(--accent, #6FBD85)" />
+          <path
+            d="M36 16L56 33H50V56H40V44H32V56H22V33H16L36 16Z"
+            fill="white"
+            fillOpacity="0.95"
+          />
         </svg>
-        <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--text-3)", marginBottom: 8 }} />
-        <p className="text-sm" style={{ color: "var(--text-3)" }}>
-          {error || "Anmeldung wird abgeschlossen..."}
-        </p>
+
+        {errorMsg ? (
+          <p
+            className="text-sm text-center px-6"
+            style={{ color: "var(--text-2, #6b7280)" }}
+          >
+            {errorMsg}
+          </p>
+        ) : (
+          <>
+            <Loader2
+              className="w-5 h-5 animate-spin"
+              style={{ color: "var(--text-3, #9ca3af)" }}
+            />
+            <p
+              className="text-sm"
+              style={{ color: "var(--text-3, #9ca3af)" }}
+            >
+              Anmeldung wird abgeschlossen…
+            </p>
+          </>
+        )}
       </div>
     );
   }
 
-  // Render children once OAuth processing is complete
+  // Non-callback path: render the app normally.
   return <>{children}</>;
 }
