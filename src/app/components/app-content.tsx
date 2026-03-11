@@ -4,11 +4,19 @@ import { AuthScreen } from "./auth-screen";
 import { OnboardingScreen } from "./onboarding-screen";
 import { MainShell } from "./main-shell";
 import { Loader2 } from "lucide-react";
+import { supabase } from "./supabase-client";
+import { OAuthCallbackHandler } from "./oauth-callback-handler";
 
 // ── Extract deep-link invite token from URL on app load ─────────
 function extractInviteFromUrl(): string | null {
   try {
+    // Don't extract invite if we're processing OAuth callback
     const params = new URLSearchParams(window.location.search);
+    if (params.get("code")) {
+      // OAuth callback in progress, skip invite extraction
+      return null;
+    }
+
     const token = params.get("invite");
     if (token) {
       // Clean the token from the URL without a page reload
@@ -71,8 +79,10 @@ function AppRouter() {
 
 export function AppContent() {
   return (
-    <AuthProvider>
-      <AppRouter />
-    </AuthProvider>
+    <OAuthCallbackHandler>
+      <AuthProvider>
+        <AppRouter />
+      </AuthProvider>
+    </OAuthCallbackHandler>
   );
 }
