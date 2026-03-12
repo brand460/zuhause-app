@@ -69,7 +69,8 @@ import {
 import { useBackHandler } from "../ui/use-back-handler";
 import { useAuth } from "../auth-context";
 import { useKeyboardHeight } from "./use-keyboard-height";
-// bagFilledRaw import removed — using PNG files instead
+import bagEmptyImg from "figma:asset/7600a694d5105599cb2bd19d670b36821050a74e.png";
+import bagFullImg from "figma:asset/398486aade794d4966e0e4f98a30bcee3925f855.png";
 
 // ── Types ──────────────────────────────────────────────────────────
 interface StoreSettingEntry {
@@ -4237,7 +4238,7 @@ export function EinkaufenScreen({
             style={{ minHeight: "100%" }}
           >
             <img
-              src="/images/bag-full.png"
+              src={bagEmptyImg}
               alt="Einkaufstasche"
               style={{ width: 120, height: "auto" }}
               className="mb-5"
@@ -4255,7 +4256,7 @@ export function EinkaufenScreen({
             style={{ minHeight: "100%" }}
           >
             <img
-              src="/images/bag-empty.png"
+              src={bagFullImg}
               alt="Einkaufstasche"
               style={{ width: 120, height: "auto" }}
               className="mb-5"
