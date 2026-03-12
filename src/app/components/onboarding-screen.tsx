@@ -11,7 +11,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { useAuth } from "./auth-context";
-import { apiFetch, supabase } from "./supabase-client";
+import { supabase } from "./supabase-client";
 
 // ── Token extraction from a URL or raw token string ──────────────
 function extractToken(input: string): string {
@@ -247,13 +247,27 @@ export function OnboardingScreen({ pendingToken }: OnboardingScreenProps) {
     debounceRef.current = setTimeout(async () => {
       setValidating(true);
       try {
-        const res = await apiFetch(`/invite/${token}`);
-        if (res.valid) {
-          setJoinPreview({ household_name: res.household_name });
-          setError("");
+        // Read invite directly from KV — no server call, no JWT issues
+        const { data: kvRow } = await supabase
+          .from("kv_store_2a26506b")
+          .select("value")
+          .eq("key", `invite:${token}`)
+          .maybeSingle();
+
+        if (kvRow?.value) {
+          const inv = kvRow.value as any;
+          const expired = new Date(inv.expires_at) < new Date();
+          const used = !!inv.used_by;
+          if (!expired && !used) {
+            setJoinPreview({ household_name: inv.household_name });
+            setError("");
+          } else {
+            setJoinPreview(null);
+            setError(used ? "Dieser Link wurde bereits verwendet." : "Dieser Einladungslink ist abgelaufen.");
+          }
         } else {
           setJoinPreview(null);
-          setError(res.error || "Ungültiger Link.");
+          setError("Ungültiger Link.");
         }
       } catch {
         setJoinPreview(null);
@@ -273,15 +287,28 @@ export function OnboardingScreen({ pendingToken }: OnboardingScreenProps) {
     setError("");
     setLoading(true);
     try {
-      // createHousehold now returns the household id directly (server-side, bypasses RLS)
       const { id: hhId } = await createHousehold(householdName.trim());
-      // Generate invite link
-      const hh = await apiFetch(
-        "/invite/generate",
-        { method: "POST", body: JSON.stringify({ household_id: hhId }) }
-      );
-      const link = `${window.location.origin}?invite=${hh.token}`;
-      setInviteLink(link);
+
+      // Generate invite link directly via KV — no server call, no JWT issues
+      const invToken = crypto.randomUUID().replace(/-/g, "");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+
+      await supabase
+        .from("kv_store_2a26506b")
+        .upsert({
+          key: `invite:${invToken}`,
+          value: {
+            household_id: hhId,
+            household_name: householdName.trim(),
+            created_by: authUser?.id,
+            created_at: new Date().toISOString(),
+            expires_at: expiresAt,
+            used_by: null,
+          },
+        });
+
+      setInviteLink(`${window.location.origin}?invite=${invToken}`);
       setMode("create-done");
     } catch (err: any) {
       console.log("Create household error:", err);
@@ -289,20 +316,6 @@ export function OnboardingScreen({ pendingToken }: OnboardingScreenProps) {
     } finally {
       setLoading(false);
     }
-  };
-
-  // helper: get fresh household id from Supabase after creation — no longer needed,
-  // kept for potential future use but not called from handleCreate.
-  const getHouseholdId = async (): Promise<string> => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Nicht eingeloggt.");
-    const { data: membership } = await supabase
-      .from("household_members")
-      .select("household_id")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (!membership?.household_id) throw new Error("Haushalt nicht gefunden.");
-    return membership.household_id;
   };
 
   // ── Join by invite ────────────────────────────────────────────

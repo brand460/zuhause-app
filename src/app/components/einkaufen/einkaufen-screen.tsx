@@ -615,22 +615,26 @@ function StorePopover({
     };
   }, [onClose]);
 
+  const isAlleStore = storeId === "alle";
+
   const options = [
     {
       icon: <ArrowUpDown className="w-4 h-4" />,
       label: "Verschieben",
       action: onReorder,
     },
-    {
-      icon: <Settings className="w-4 h-4" />,
-      label: "Anpassen",
-      action: onCategorySort,
-    },
-    {
-      icon: <Trash2 className="w-4 h-4" />,
-      label: "Löschen",
-      action: onRemove,
-    },
+    ...(!isAlleStore ? [
+      {
+        icon: <Settings className="w-4 h-4" />,
+        label: "Anpassen",
+        action: onCategorySort,
+      },
+      {
+        icon: <Trash2 className="w-4 h-4" />,
+        label: "Entfernen",
+        action: onRemove,
+      },
+    ] : []),
   ];
 
   return (
@@ -3001,6 +3005,7 @@ export function EinkaufenScreen({
       settings.map((s) => [s.store_id, s]),
     );
     const visible = baseStores.filter((s) => {
+      if (s.id === "alle") return true; // always visible, cannot be removed
       const setting = settingsMap.get(s.id);
       return setting ? setting.is_visible : true;
     });
@@ -3537,6 +3542,7 @@ export function EinkaufenScreen({
 
   const handleRemoveStore = useCallback(
     (storeId: string) => {
+      if (storeId === "alle") return; // guard: general store cannot be removed
       setStores((prev) => {
         const remaining = prev.filter((s) => s.id !== storeId);
         if (selectedStore === storeId && remaining.length > 0) {

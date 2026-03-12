@@ -16,7 +16,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useAuth } from "./auth-context";
-import { supabase, apiFetch } from "./supabase-client";
+import { supabase } from "./supabase-client";
 
 // ── Types ─────────────────────────────────────────────────────────
 interface Member {
@@ -122,23 +122,41 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
     setMembersLoading(true);
     setMembersError("");
     try {
-      // 1. Get all members of this household (joined with profiles)
-      const { data: rows, error: rowsErr } = await supabase
+      // 1. Load members (no join — Supabase schema cache has no direct relationship)
+      const { data: memberRows, error: memberErr } = await supabase
         .from("household_members")
-        .select("user_id, role, profiles(display_name)")
+        .select("user_id, role, joined_at")
         .eq("household_id", household.id);
 
-      if (rowsErr) {
-        console.log("loadMembers: household_members error:", rowsErr.message);
-        throw new Error(`Mitglieder konnten nicht geladen werden: ${rowsErr.message}`);
+      if (memberErr) {
+        console.log("loadMembers: household_members error:", memberErr.message);
+        throw new Error(`Mitglieder konnten nicht geladen werden: ${memberErr.message}`);
       }
 
-      const mapped: Member[] = (rows || []).map((r: any) => ({
-        user_id: r.user_id,
-        role: r.role,
-        display_name: r.profiles?.display_name || "Unbekannt",
-        is_me: r.user_id === user.id,
-      }));
+      // 2. Load profiles for those user IDs
+      const userIds = (memberRows || []).map((m: any) => m.user_id);
+      const { data: profileRows, error: profileErr } = await supabase
+        .from("profiles")
+        .select("id, display_name, avatar_url")
+        .in("id", userIds);
+
+      if (profileErr) {
+        console.log("loadMembers: profiles error:", profileErr.message);
+        // Non-fatal — continue with partial data
+      }
+
+      // 3. Merge
+      const profileMap = new Map((profileRows || []).map((p: any) => [p.id, p]));
+
+      const mapped: Member[] = (memberRows || []).map((r: any) => {
+        const profile = profileMap.get(r.user_id);
+        return {
+          user_id: r.user_id,
+          role: r.role,
+          display_name: profile?.display_name || "Unbekannt",
+          is_me: r.user_id === user.id,
+        };
+      });
 
       setMembers(mapped);
 
@@ -182,18 +200,33 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
     }
   };
 
-  // ── Generate invite link — via apiFetch (needs server-side token) ─
+  // ── Generate invite link — direct KV write, no server needed ──────
   const generateInvite = async () => {
-    if (!household) return;
+    if (!household || !user) return;
     setInviteLoading(true);
     setInviteError("");
     setCopied(false);
     try {
-      const res = await apiFetch("/invite/generate", {
-        method: "POST",
-        body: JSON.stringify({ household_id: household.id }),
-      });
-      setInviteLink(`${window.location.origin}?invite=${res.token}`);
+      const token = crypto.randomUUID().replace(/-/g, "");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const { error } = await supabase
+        .from("kv_store_2a26506b")
+        .upsert({
+          key: `invite:${token}`,
+          value: {
+            household_id: household.id,
+            household_name: household.name,
+            created_by: user.id,
+            created_at: new Date().toISOString(),
+            expires_at: expiresAt,
+            used_by: null,
+          },
+        });
+
+      if (error) throw new Error(`Einladungslink konnte nicht erstellt werden: ${error.message}`);
+
+      setInviteLink(`${window.location.origin}?invite=${token}`);
     } catch (err: any) {
       console.log("Generate invite error:", err);
       setInviteError(err?.message || "Link-Generierung fehlgeschlagen.");

@@ -259,14 +259,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const joinByToken = async (token: string) => {
-    // Accept the invite via server (validates token, adds to household_members)
-    await apiFetch("/invite/accept", {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    });
-    // Reload profile+household state
     const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (authUser) await loadProfile(authUser.id);
+    if (!authUser) throw new Error("Nicht autorisiert — kein Benutzer gefunden.");
+
+    // 1. Read invite data directly from KV (no server call, no JWT issues)
+    const { data: kvRow, error: kvErr } = await supabase
+      .from("kv_store_2a26506b")
+      .select("value")
+      .eq("key", `invite:${token}`)
+      .maybeSingle();
+
+    if (kvErr || !kvRow) throw new Error("Ungültiger Einladungslink.");
+    const inviteData = kvRow.value as any;
+
+    if (inviteData.used_by) throw new Error("Dieser Link wurde bereits verwendet.");
+    if (new Date(inviteData.expires_at) < new Date()) throw new Error("Dieser Einladungslink ist abgelaufen.");
+
+    // 2. Check if already a member
+    const { data: existing } = await supabase
+      .from("household_members")
+      .select("id")
+      .eq("household_id", inviteData.household_id)
+      .eq("user_id", authUser.id)
+      .maybeSingle();
+
+    if (!existing) {
+      const { error: memberErr } = await supabase
+        .from("household_members")
+        .insert({ household_id: inviteData.household_id, user_id: authUser.id, role: "member" });
+
+      if (memberErr) throw new Error(`Beitreten fehlgeschlagen: ${memberErr.message}`);
+    }
+
+    // 3. Mark token as used
+    await supabase
+      .from("kv_store_2a26506b")
+      .upsert({ key: `invite:${token}`, value: { ...inviteData, used_by: authUser.id } });
+
+    // 4. Reload profile + household state
+    await loadProfile(authUser.id);
   };
 
   const refreshProfile = async () => {
