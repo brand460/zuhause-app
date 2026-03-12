@@ -38,8 +38,6 @@ export interface MealPlanEntry {
   household_id: string;
 }
 
-export const HOUSEHOLD_ID = "dev-household";
-
 export const RECIPE_CATEGORIES = [
   "Alle",
   "Asiatisch",

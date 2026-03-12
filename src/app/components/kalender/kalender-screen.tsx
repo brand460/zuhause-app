@@ -30,12 +30,11 @@ import {
   NotificationMinutes,
   REPEAT_OPTIONS,
   DEFAULT_LABELS,
-  DEV_HOUSEHOLD_ID,
-  DEV_MEMBERS,
   HouseholdMember,
   generateId,
   getColorHex,
 } from "./calendar-types";
+import { useAuth } from "../auth-context";
 
 // ── Constants & Helpers ────────────────────────────────────────────
 
@@ -482,6 +481,7 @@ function getEventPillStyle(color: EventColor, isDark: boolean): { bg: string; te
 // ── Main Component ─────────────────────────────────────────────────
 
 export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, itemId?: string | null) => void } = {}) {
+  const { householdId, householdMembers: authMembers } = useAuth();
   const today = useMemo(() => new Date(), []);
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
@@ -508,7 +508,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
 
   const loadEvents = useCallback(async () => {
     try {
-      const data = await apiFetch(`/calendar-events?household_id=${DEV_HOUSEHOLD_ID}`);
+      const data = await apiFetch(`/calendar-events?household_id=${householdId}`);
       setEvents(data.events || []);
       if (loadErrorRef.current) {
         console.log("Kalender-Events erfolgreich geladen nach vorherigem Fehler.");
@@ -520,35 +520,35 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
         loadErrorRef.current = true;
       }
     }
-  }, []);
+  }, [householdId]);
 
   const saveEvents = useCallback((newEvents: CalendarEvent[]) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(async () => {
       try {
-        broadcastChange([`calendar_events:${DEV_HOUSEHOLD_ID}`]);
+        broadcastChange([`calendar_events:${householdId}`]);
         await apiFetch("/calendar-events", {
           method: "PUT",
-          body: JSON.stringify({ household_id: DEV_HOUSEHOLD_ID, events: newEvents }),
+          body: JSON.stringify({ household_id: householdId, events: newEvents }),
         });
       } catch (err) {
         console.error("Fehler beim Speichern der Kalender-Events:", err);
       }
     }, 500);
-  }, []);
+  }, [householdId]);
 
   // ── Labels sync ────────────────────────────────────────────────
 
   const loadLabels = useCallback(async () => {
     try {
-      const data = await apiFetch(`/calendar-labels?household_id=${DEV_HOUSEHOLD_ID}`);
+      const data = await apiFetch(`/calendar-labels?household_id=${householdId}`);
       const loaded = data.labels || [];
       if (loaded.length === 0) {
         // Seed default labels on first load
         setLabels(DEFAULT_LABELS);
         await apiFetch("/calendar-labels", {
           method: "PUT",
-          body: JSON.stringify({ household_id: DEV_HOUSEHOLD_ID, labels: DEFAULT_LABELS }),
+          body: JSON.stringify({ household_id: householdId, labels: DEFAULT_LABELS }),
         });
         console.log("Standard-Labels gespeichert.");
       } else {
@@ -559,7 +559,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
       // Fallback to defaults
       setLabels(DEFAULT_LABELS);
     }
-  }, []);
+  }, [householdId]);
 
   const reloadAll = useCallback(() => {
     loadEvents();
@@ -588,7 +588,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
 
   // ── Supabase Realtime subscription for live sync ──
   useKvRealtime(
-    [`calendar_events:${DEV_HOUSEHOLD_ID}`, `calendar_labels:${DEV_HOUSEHOLD_ID}`],
+    [`calendar_events:${householdId}`, `calendar_labels:${householdId}`],
     reloadAll,
   );
 
@@ -634,7 +634,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
 
     setEditingEvent({
       id: "",
-      household_id: DEV_HOUSEHOLD_ID,
+      household_id: householdId || "",
       title: "",
       start_time: startDate.toISOString(),
       end_time: endDate.toISOString(),
@@ -1013,7 +1013,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
                           {hasAssigned && (
                             <div className="flex items-center flex-shrink-0">
                               {ev.assigned_to!.map((memberId, idx) => {
-                                const member = DEV_MEMBERS.find((m) => m.id === memberId);
+                                const member = authMembers.find((m) => m.id === memberId);
                                 if (!member) return null;
                                 const initial = member.display_name.charAt(0).toUpperCase();
                                 return member.avatar_url ? (
@@ -2027,8 +2027,8 @@ function EventEditorSheet({
     (async () => {
       try {
         const [pagesRes, recipesRes] = await Promise.all([
-          apiFetch(`/custom-pages?household_id=${DEV_HOUSEHOLD_ID}`),
-          apiFetch(`/recipes?household_id=${DEV_HOUSEHOLD_ID}`),
+          apiFetch(`/custom-pages?household_id=${householdId}`),
+          apiFetch(`/recipes?household_id=${householdId}`),
         ]);
         setAvailablePages(pagesRes.pages || []);
         setAvailableRecipes(recipesRes.recipes || []);
@@ -2268,8 +2268,9 @@ function EventEditorSheet({
     );
   };
 
-  // DEV BYPASS: use DEV_MEMBERS; replace with real household members from profiles table
-  const householdMembers: HouseholdMember[] = DEV_MEMBERS;
+  // Use real household members from auth context
+  const { householdMembers: authHouseholdMembers } = useAuth();
+  const householdMembers: HouseholdMember[] = authHouseholdMembers as HouseholdMember[];
 
   // ── Row component ──────────────────────────────────────────────
   const FormRow = ({

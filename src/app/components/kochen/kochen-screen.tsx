@@ -11,8 +11,9 @@ import { ImageWithFallback } from "../figma/ImageWithFallback";
 import type {
   Recipe, MealPlanEntry, Ingredient, RecipeStep, CategoryFilter,
 } from "./kochen-types";
-import { HOUSEHOLD_ID, RECIPE_CATEGORIES } from "./kochen-types";
+import { RECIPE_CATEGORIES } from "./kochen-types";
 import { useBackHandler, pushBack, popBack } from "../ui/use-back-handler";
+import { useAuth } from "../auth-context";
 
 const DRAWER_SPRING = { type: "spring" as const, damping: 25, stiffness: 300 };
 
@@ -76,7 +77,7 @@ function emptyRecipe(): Recipe {
     rating: 0,
     comment: "",
     is_favorite: false,
-    household_id: HOUSEHOLD_ID,
+    household_id: "",
     created_at: new Date().toISOString(),
   };
 }
@@ -86,6 +87,7 @@ function emptyRecipe(): Recipe {
 // ══════════════════════════════════════════════════════════════════════
 
 export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } = {}) {
+  const { householdId } = useAuth();
   // ── State ──────────────────────────────────────────────────────────
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [mealPlan, setMealPlan] = useState<MealPlanEntry[]>([]);
@@ -150,9 +152,9 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   const loadData = useCallback(async () => {
     try {
       const [recipeRes, mealRes, storeRes] = await Promise.all([
-        apiFetch(`/recipes?household_id=${HOUSEHOLD_ID}`),
-        apiFetch(`/meal-plan?household_id=${HOUSEHOLD_ID}`),
-        apiFetch(`/store-settings?household_id=${HOUSEHOLD_ID}`),
+        apiFetch(`/recipes?household_id=${householdId}`),
+        apiFetch(`/meal-plan?household_id=${householdId}`),
+        apiFetch(`/store-settings?household_id=${householdId}`),
       ]);
       setRecipes(recipeRes.recipes || []);
       setMealPlan(mealRes.entries || []);
@@ -163,13 +165,13 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [householdId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   // ── Supabase Realtime subscription for live sync ──
   useKvRealtime(
-    [`recipes:${HOUSEHOLD_ID}`, `meal_plan:${HOUSEHOLD_ID}`],
+    [`recipes:${householdId}`, `meal_plan:${householdId}`],
     loadData,
   );
 
@@ -210,30 +212,30 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   const saveRecipes = useCallback(async (updated: Recipe[]) => {
     setRecipes(updated);
     try {
-      broadcastChange([`recipes:${HOUSEHOLD_ID}`]);
+      broadcastChange([`recipes:${householdId}`]);
       await apiFetch("/recipes", {
         method: "PUT",
-        body: JSON.stringify({ household_id: HOUSEHOLD_ID, recipes: updated }),
+        body: JSON.stringify({ household_id: householdId, recipes: updated }),
       });
     } catch (err) {
       console.error("Fehler beim Speichern der Rezepte:", err);
       toast.error("Speichern fehlgeschlagen");
     }
-  }, []);
+  }, [householdId]);
 
   const saveMealPlan = useCallback(async (updated: MealPlanEntry[]) => {
     setMealPlan(updated);
     try {
-      broadcastChange([`meal_plan:${HOUSEHOLD_ID}`]);
+      broadcastChange([`meal_plan:${householdId}`]);
       await apiFetch("/meal-plan", {
         method: "PUT",
-        body: JSON.stringify({ household_id: HOUSEHOLD_ID, entries: updated }),
+        body: JSON.stringify({ household_id: householdId, entries: updated }),
       });
     } catch (err) {
       console.error("Fehler beim Speichern des Wochenplans:", err);
       toast.error("Speichern fehlgeschlagen");
     }
-  }, []);
+  }, [householdId]);
 
   // ── Derived data ───────────────────────────────────────────────────
 
@@ -369,7 +371,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
       date: dateStr,
       recipe_id: recipeId,
       free_text: null,
-      household_id: HOUSEHOLD_ID,
+      household_id: householdId || "",
     });
     await saveMealPlan(existing);
     setShowMealPicker(false);
@@ -392,7 +394,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
       date: dateStr,
       recipe_id: null,
       free_text: text,
-      household_id: HOUSEHOLD_ID,
+      household_id: householdId || "",
     });
     await saveMealPlan(existing);
     setShowFreetextInput(false);
@@ -438,7 +440,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
           ...emptyRecipe(),
           ...res.recipe,
           id: genId(),
-          household_id: HOUSEHOLD_ID,
+          household_id: householdId || "",
           created_at: new Date().toISOString(),
           rating: 0,
           comment: "",
@@ -468,7 +470,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   const addIngredientsToShopping = async () => {
     if (!ingredientsRecipe) return;
     try {
-      const shoppingRes = await apiFetch(`/shopping?household_id=${HOUSEHOLD_ID}`);
+      const shoppingRes = await apiFetch(`/shopping?household_id=${householdId}`);
       const existingItems: any[] = shoppingRes.items || [];
       const chosen = ingredientsRecipe.ingredients.filter((_, i) => selectedIngredients[i]);
       const newItems = chosen.map((ing, i) => ({
@@ -480,12 +482,12 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
         position: existingItems.length + i,
         quantity: 1,
         unit: null,
-        household_id: HOUSEHOLD_ID,
+        household_id: householdId || "",
       }));
       await apiFetch("/shopping", {
         method: "PUT",
         body: JSON.stringify({
-          household_id: HOUSEHOLD_ID,
+          household_id: householdId,
           items: [...existingItems, ...newItems],
         }),
       });

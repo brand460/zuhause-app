@@ -49,7 +49,7 @@ export default function App() {
     }
   }, []);
 
-  // DEV MODE: AuthProvider removed temporarily. Re-wrap with <AuthProvider> when re-enabling auth.
+  // Auth is handled inside AppContent → AuthProvider
   return (
     <HelmetProvider>
       <Helmet>

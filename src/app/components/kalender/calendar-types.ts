@@ -51,8 +51,6 @@ export const NOTIFICATION_OPTIONS: { value: NotificationMinutes; label: string }
   { value: 1440, label: "1 Tag vorher" },
 ];
 
-export const DEV_HOUSEHOLD_ID = "dev-household";
-
 export interface CalendarLabel {
   id: string;
   name: string;
@@ -89,13 +87,3 @@ export interface HouseholdMember {
   avatar_url: string | null; // from Google OAuth user_metadata.avatar_url
   initials_color: string; // fallback bg color for initial circle
 }
-
-/**
- * DEV BYPASS: placeholder users until real auth is active.
- * When Google OAuth is enabled these will come from a profiles table
- * populated via user.user_metadata.full_name / avatar_url.
- */
-export const DEV_MEMBERS: HouseholdMember[] = [
-  { id: "dev-max", display_name: "Max", avatar_url: null, initials_color: "#F97316" },
-  { id: "dev-anna", display_name: "Anna", avatar_url: null, initials_color: "#3B82F6" },
-];

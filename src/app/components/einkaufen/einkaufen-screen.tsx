@@ -54,7 +54,6 @@ import {
   getQuickSuggestions,
   getLogoUrl,
   generateId,
-  DEV_HOUSEHOLD_ID,
   STORE_SUGGESTIONS,
   StoreSuggestion,
   GroceryTemplate,
@@ -68,8 +67,9 @@ import {
   broadcastChange,
 } from "../use-kv-realtime";
 import { useBackHandler } from "../ui/use-back-handler";
+import { useAuth } from "../auth-context";
 import { useKeyboardHeight } from "./use-keyboard-height";
-import bagFilledRaw from "../../../imports/bag-filled.svg?raw";
+// bagFilledRaw import removed — using PNG files instead
 
 // ── Types ──────────────────────────────────────────────────────────
 interface StoreSettingEntry {
@@ -80,10 +80,10 @@ interface StoreSettingEntry {
 }
 
 // ── API helpers ────────────────────────────────────────────────────
-async function fetchItems(): Promise<ShoppingItem[]> {
+async function fetchItems(hhId: string): Promise<ShoppingItem[]> {
   try {
     const res = await fetch(
-      `${API_BASE}/shopping?household_id=${DEV_HOUSEHOLD_ID}`,
+      `${API_BASE}/shopping?household_id=${hhId}`,
       { headers: { Authorization: `Bearer ${publicAnonKey}` } },
     );
     const json = await res.json();
@@ -94,7 +94,7 @@ async function fetchItems(): Promise<ShoppingItem[]> {
   }
 }
 
-async function saveItems(items: ShoppingItem[]): Promise<void> {
+async function saveItems(hhId: string, items: ShoppingItem[]): Promise<void> {
   try {
     await fetch(`${API_BASE}/shopping`, {
       method: "PUT",
@@ -103,7 +103,7 @@ async function saveItems(items: ShoppingItem[]): Promise<void> {
         Authorization: `Bearer ${publicAnonKey}`,
       },
       body: JSON.stringify({
-        household_id: DEV_HOUSEHOLD_ID,
+        household_id: hhId,
         items,
       }),
     });
@@ -112,12 +112,12 @@ async function saveItems(items: ShoppingItem[]): Promise<void> {
   }
 }
 
-async function fetchStoreSettings(): Promise<
+async function fetchStoreSettings(hhId: string): Promise<
   StoreSettingEntry[]
 > {
   try {
     const res = await fetch(
-      `${API_BASE}/store-settings?household_id=${DEV_HOUSEHOLD_ID}`,
+      `${API_BASE}/store-settings?household_id=${hhId}`,
       { headers: { Authorization: `Bearer ${publicAnonKey}` } },
     );
     const json = await res.json();
@@ -129,6 +129,7 @@ async function fetchStoreSettings(): Promise<
 }
 
 async function saveStoreSettings(
+  hhId: string,
   settings: StoreSettingEntry[],
 ): Promise<void> {
   try {
@@ -139,7 +140,7 @@ async function saveStoreSettings(
         Authorization: `Bearer ${publicAnonKey}`,
       },
       body: JSON.stringify({
-        household_id: DEV_HOUSEHOLD_ID,
+        household_id: hhId,
         settings,
       }),
     });
@@ -148,10 +149,10 @@ async function saveStoreSettings(
   }
 }
 
-async function fetchCustomCategories(): Promise<string[]> {
+async function fetchCustomCategories(hhId: string): Promise<string[]> {
   try {
     const res = await fetch(
-      `${API_BASE}/custom-categories?household_id=${DEV_HOUSEHOLD_ID}`,
+      `${API_BASE}/custom-categories?household_id=${hhId}`,
       { headers: { Authorization: `Bearer ${publicAnonKey}` } },
     );
     const json = await res.json();
@@ -163,6 +164,7 @@ async function fetchCustomCategories(): Promise<string[]> {
 }
 
 async function saveCustomCategories(
+  hhId: string,
   categories: string[],
 ): Promise<void> {
   try {
@@ -173,7 +175,7 @@ async function saveCustomCategories(
         Authorization: `Bearer ${publicAnonKey}`,
       },
       body: JSON.stringify({
-        household_id: DEV_HOUSEHOLD_ID,
+        household_id: hhId,
         categories,
       }),
     });
@@ -190,10 +192,10 @@ interface GlobalItem {
   times_used: number;
 }
 
-async function fetchGlobalItems(): Promise<GlobalItem[]> {
+async function fetchGlobalItems(hhId: string): Promise<GlobalItem[]> {
   try {
     const res = await fetch(
-      `${API_BASE}/global-items?household_id=${DEV_HOUSEHOLD_ID}`,
+      `${API_BASE}/global-items?household_id=${hhId}`,
       { headers: { Authorization: `Bearer ${publicAnonKey}` } },
     );
     const json = await res.json();
@@ -205,6 +207,7 @@ async function fetchGlobalItems(): Promise<GlobalItem[]> {
 }
 
 async function upsertGlobalItem(
+  hhId: string,
   name: string,
   category: string,
 ): Promise<void> {
@@ -216,7 +219,7 @@ async function upsertGlobalItem(
         Authorization: `Bearer ${publicAnonKey}`,
       },
       body: JSON.stringify({
-        household_id: DEV_HOUSEHOLD_ID,
+        household_id: hhId,
         name,
         category,
       }),
@@ -2845,6 +2848,7 @@ export function EinkaufenScreen({
 }: {
   onItemCountChange?: (count: number) => void;
 }) {
+  const { householdId } = useAuth();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [stores, setStores] =
     useState<StoreInfo[]>(DEFAULT_STORES);
@@ -2928,13 +2932,14 @@ export function EinkaufenScreen({
 
   // ── Load items + store settings ────────────────────────────────
   const reloadAllData = useCallback(async () => {
+    if (!householdId) return;
     try {
       const [serverItems, settings, customCats, gItems] =
         await Promise.all([
-          fetchItems(),
-          fetchStoreSettings(),
-          fetchCustomCategories(),
-          fetchGlobalItems(),
+          fetchItems(householdId),
+          fetchStoreSettings(householdId),
+          fetchCustomCategories(householdId),
+          fetchGlobalItems(householdId),
         ]);
       // Only update if no local changes happened during fetch
       if (Date.now() - lastLocalChangeRef.current < 2000)
@@ -2950,7 +2955,7 @@ export function EinkaufenScreen({
     } catch (err) {
       console.log("reloadAllData error:", err);
     }
-  }, []);
+  }, [householdId]);
 
   useEffect(() => {
     reloadAllData();
@@ -2988,13 +2993,14 @@ export function EinkaufenScreen({
 
   // ── Supabase Realtime subscription for live sync ──
   useKvRealtime(
-    [
-      `shopping:${DEV_HOUSEHOLD_ID}`,
-      `store_settings:${DEV_HOUSEHOLD_ID}`,
-      `global_items:${DEV_HOUSEHOLD_ID}`,
-      `custom_categories:${DEV_HOUSEHOLD_ID}`,
-    ],
+    householdId ? [
+      `shopping:${householdId}`,
+      `store_settings:${householdId}`,
+      `global_items:${householdId}`,
+      `custom_categories:${householdId}`,
+    ] : [],
     reloadAllData,
+    !!householdId,
   );
 
   const applyStoreSettings = (
@@ -3030,7 +3036,8 @@ export function EinkaufenScreen({
       // give extra buffer so the server has time to persist)
       if (Date.now() - lastLocalChangeRef.current < 2000)
         return;
-      const serverItems = await fetchItems();
+      if (!householdId) return;
+      const serverItems = await fetchItems(householdId);
       // Re-check after async fetch in case a local change happened while waiting
       if (Date.now() - lastLocalChangeRef.current < 2000)
         return;
@@ -3039,7 +3046,7 @@ export function EinkaufenScreen({
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [activeDragId]);
+  }, [activeDragId, householdId]);
 
   // ── Click outside to exit store reorder mode ───────────────────
   useEffect(() => {
@@ -3068,11 +3075,12 @@ export function EinkaufenScreen({
       if (saveTimeout.current)
         clearTimeout(saveTimeout.current);
       saveTimeout.current = setTimeout(() => {
-        broadcastChange([`shopping:${DEV_HOUSEHOLD_ID}`]);
-        saveItems(newItems);
+        if (!householdId) return;
+        broadcastChange([`shopping:${householdId}`]);
+        saveItems(householdId, newItems);
       }, 300);
     },
-    [],
+    [householdId],
   );
 
   const updateItems = useCallback(
@@ -3093,11 +3101,12 @@ export function EinkaufenScreen({
       if (settingsSaveTimeout.current)
         clearTimeout(settingsSaveTimeout.current);
       settingsSaveTimeout.current = setTimeout(() => {
-        broadcastChange([`store_settings:${DEV_HOUSEHOLD_ID}`]);
-        saveStoreSettings(newSettings);
+        if (!householdId) return;
+        broadcastChange([`store_settings:${householdId}`]);
+        saveStoreSettings(householdId, newSettings);
       }, 300);
     },
-    [],
+    [householdId],
   );
 
   const updateStoreSettings = useCallback(
@@ -3324,11 +3333,11 @@ export function EinkaufenScreen({
           {
             name: newName,
             category: item.category,
-            created_by_household_id: DEV_HOUSEHOLD_ID,
+            created_by_household_id: householdId || "",
             times_used: 1,
           },
         ]);
-        upsertGlobalItem(newName, item.category);
+        if (householdId) upsertGlobalItem(householdId, newName, item.category);
       }
     },
     [items, globalItems, updateItems],
@@ -3386,7 +3395,7 @@ export function EinkaufenScreen({
         is_checked: false,
         position: insertPosition,
         quantity: 1,
-        household_id: DEV_HOUSEHOLD_ID,
+        household_id: householdId || "",
       };
 
       updateItems((prev) => {
@@ -3424,13 +3433,13 @@ export function EinkaufenScreen({
             {
               name,
               category,
-              created_by_household_id: DEV_HOUSEHOLD_ID,
+              created_by_household_id: householdId || "",
               times_used: 1,
             },
           ];
         });
         // Persist to server (fire and forget)
-        upsertGlobalItem(name, category);
+        if (householdId) upsertGlobalItem(householdId, name, category);
       }
     },
     [items, selectedStore, getCustomCategoryIndex, updateItems],
@@ -3702,8 +3711,10 @@ export function EinkaufenScreen({
         if (customCatSaveTimeout.current)
           clearTimeout(customCatSaveTimeout.current);
         customCatSaveTimeout.current = setTimeout(() => {
-          broadcastChange([`custom_categories:${DEV_HOUSEHOLD_ID}`]);
-          saveCustomCategories(next);
+          if (householdId) {
+            broadcastChange([`custom_categories:${householdId}`]);
+            saveCustomCategories(householdId, next);
+          }
         }, 300);
         return next;
       });
@@ -4225,23 +4236,13 @@ export function EinkaufenScreen({
             className="flex flex-col items-center px-6 pt-20 pb-20"
             style={{ minHeight: "100%" }}
           >
-            {/* bag-3.svg inlined */}
-            <svg
-              viewBox="0 0 509.04 718.44"
-              width="92"
-              height="130"
-              xmlns="http://www.w3.org/2000/svg"
+            <img
+              src="/images/bag-full.png"
+              alt="Einkaufstasche"
+              style={{ width: 120, height: "auto" }}
               className="mb-5"
               aria-hidden="true"
-            >
-              <path fill="#b5855d" d="M361.77,270.44l-2.5,24h-227.5l-2.5-24-58-22h121c0,17.12,23.95,31,53.5,31s53.5-13.88,53.5-31h121l-58.5,22Z"/>
-              <path fill="#94704e" d="M129.27,270.44l2.5,24H45.77l83.5-24Z"/>
-              <path fill="#94704e" d="M361.77,270.44l-2.5,24h86l-83.5-24Z"/>
-              <path fill="#c59066" d="M70.77,247.94l58.5,22.5-58,16.5-.5-39Z"/>
-              <path fill="#c59066" d="M420.27,247.94l-58.5,22.5,58,16.5.5-39Z"/>
-              <path fill="#b5855d" d="M309.26,293.44c0,.17,0,.33,0,.5,0,20.16-28.43,36.5-63.5,36.5s-63.5-16.34-63.5-36.5c0-.17,0-.33,0-.5h126.99Z"/>
-              <path fill="#d3b08a" d="M463.27,718.44H28.27l17.5-424h136.51c.46,19.93,28.71,36,63.49,36s63.03-16.07,63.49-36h136.01l18,424Z"/>
-            </svg>
+            />
             <p className="text-base font-semibold text-text-1">
               Liste ist leer
             </p>
@@ -4253,19 +4254,12 @@ export function EinkaufenScreen({
             className="flex flex-col items-center px-6 pt-20 pb-20"
             style={{ minHeight: "100%" }}
           >
-            <div
+            <img
+              src="/images/bag-empty.png"
+              alt="Einkaufstasche"
+              style={{ width: 120, height: "auto" }}
               className="mb-5"
-              style={{ width: 92, height: 130, flexShrink: 0, overflow: "hidden" }}
               aria-hidden="true"
-              dangerouslySetInnerHTML={{
-                __html: bagFilledRaw
-                  .replace(/\bwidth="[^"]*"/, "")
-                  .replace(/\bheight="[^"]*"/, "")
-                  .replace(
-                    "<svg",
-                    '<svg width="92" height="130" style="display:block;width:92px;height:130px"',
-                  ),
-              }}
             />
             <p className="text-base font-semibold text-text-1">
               Alles erledigt!

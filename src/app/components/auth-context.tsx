@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import { supabase, apiFetch } from "./supabase-client";
-import type { Session, User } from "@supabase/supabase-js";
+import type { Session, User, RealtimeChannel } from "@supabase/supabase-js";
 
 interface Profile {
   id: string;
@@ -15,11 +15,20 @@ interface Household {
   created_by: string;
 }
 
+export interface HouseholdMember {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+  initials_color: string;
+}
+
 interface AuthContextType {
   session: Session | null;
   user: User | null;
   profile: Profile | null;
   household: Household | null;
+  householdId: string | null;
+  householdMembers: HouseholdMember[];
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
@@ -38,11 +47,15 @@ const noopAsyncId = async () => ({ id: "" });
 
 // Default fallback used when context is missing (e.g. during HMR refresh).
 // Returns a "loading" state so the app shows the splash screen instead of crashing.
+const MEMBER_COLORS = ["#F97316", "#3B82F6", "#22C55E", "#8B5CF6", "#EF4444", "#EC4899", "#14B8A6", "#F59E0B"];
+
 const AUTH_FALLBACK: AuthContextType = {
   session: null,
   user: null,
   profile: null,
   household: null,
+  householdId: null,
+  householdMembers: [],
   loading: true,
   signIn: noopAsync as any,
   signUp: noopAsync as any,
@@ -68,7 +81,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [household, setHousehold] = useState<Household | null>(null);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const profileChannelRef = useRef<RealtimeChannel | null>(null);
 
   // Ensure profile exists and is up-to-date with auth metadata
   async function ensureProfile(authUser: User) {
@@ -96,6 +111,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Load household members from profiles via household_members join
+  async function loadHouseholdMembers(householdId: string) {
+    try {
+      const { data: members, error } = await supabase
+        .from("household_members")
+        .select("user_id")
+        .eq("household_id", householdId);
+
+      if (error || !members || members.length === 0) {
+        setHouseholdMembers([]);
+        return;
+      }
+
+      const userIds = members.map((m: any) => m.user_id);
+      const { data: profiles, error: profErr } = await supabase
+        .from("profiles")
+        .select("id, display_name, avatar_url")
+        .in("id", userIds);
+
+      if (profErr || !profiles) {
+        setHouseholdMembers([]);
+        return;
+      }
+
+      setHouseholdMembers(
+        profiles.map((p: any, i: number) => ({
+          id: p.id,
+          display_name: p.display_name || "Nutzer",
+          avatar_url: p.avatar_url || null,
+          initials_color: MEMBER_COLORS[i % MEMBER_COLORS.length],
+        }))
+      );
+    } catch (err) {
+      console.log("Error loading household members:", err);
+    }
+  }
+
+  // Realtime profile subscription
+  function subscribeToProfile(userId: string) {
+    // Clean up existing channel
+    if (profileChannelRef.current) {
+      supabase.removeChannel(profileChannelRef.current);
+      profileChannelRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`profile-sync-${userId}`)
+      .on(
+        "postgres_changes" as any,
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${userId}`,
+        },
+        (payload: any) => {
+          const updated = payload.new;
+          if (updated) {
+            setProfile({
+              id: updated.id,
+              display_name: updated.display_name,
+              avatar_url: updated.avatar_url,
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    profileChannelRef.current = channel;
+  }
+
   // Load profile and household directly from Supabase tables
   async function loadProfile(userId: string) {
     try {
@@ -118,6 +204,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       setProfile(p);
+
+      // Subscribe to realtime profile changes
+      subscribeToProfile(userId);
 
       // Look up household via household_members table
       const { data: membership, error: memberError } = await supabase
@@ -143,8 +232,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log("Error loading household:", householdError.message);
         }
         setHousehold(h || null);
+        // Load household members
+        if (h) {
+          await loadHouseholdMembers(h.id);
+        }
       } else {
         setHousehold(null);
+        setHouseholdMembers([]);
       }
     } catch (err) {
       console.log("Error in loadProfile:", err);
@@ -173,6 +267,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setProfile(null);
         setHousehold(null);
+        setHouseholdMembers([]);
       }
     });
 
@@ -216,9 +311,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    // Clean up realtime subscription
+    if (profileChannelRef.current) {
+      supabase.removeChannel(profileChannelRef.current);
+      profileChannelRef.current = null;
+    }
     await supabase.auth.signOut();
     setProfile(null);
     setHousehold(null);
+    setHouseholdMembers([]);
   };
 
   const createHousehold = async (name: string): Promise<{ id: string }> => {
@@ -265,6 +366,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     setHousehold(hh);
+    // Load members (just the creator at this point)
+    await loadHouseholdMembers(householdId);
     return { id: householdId };
   };
 
@@ -358,6 +461,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         profile,
         household,
+        householdId: household?.id ?? null,
+        householdMembers,
         loading,
         signIn,
         signUp,

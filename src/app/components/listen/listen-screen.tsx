@@ -19,6 +19,7 @@ import {
 import { apiFetch } from "../supabase-client";
 import { useKvRealtime, broadcastChange } from "../use-kv-realtime";
 import { useBackHandler } from "../ui/use-back-handler";
+import { useAuth } from "../auth-context";
 import {
   DndContext,
   PointerSensor,
@@ -35,9 +36,6 @@ import Picker from "@emoji-mart/react";
 import data from "@emoji-mart/data";
 
 // ── Types ────────────────────────────────────────────────────────────
-
-const HOUSEHOLD_ID = "dev-household";
-const LS_LAST_PAGE_KEY = `last_open_page_${HOUSEHOLD_ID}`;
 
 interface Page {
   id: string;
@@ -163,6 +161,8 @@ const DEFAULT_CONTENTS: PageContents = Object.fromEntries(
 // ── Main Component ───────────────────────────────────────────────────
 
 export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}) {
+  const { householdId } = useAuth();
+  const LS_LAST_PAGE_KEY = `last_open_page_${householdId}`;
   const [pages, setPages] = useState<Page[]>([]);
   const [pageContents, setPageContents] = useState<PageContents>({});
   const [activePageId, setActivePageId] = useState<string | null>(null);
@@ -188,21 +188,21 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
   // ── Save helpers ───────────────────────────────────────────────
   const saveData = useCallback(async (p: Page[], c: PageContents) => {
     try {
-      broadcastChange([`custom_pages:${HOUSEHOLD_ID}`, `custom_blocks:${HOUSEHOLD_ID}`]);
+      broadcastChange([`custom_pages:${householdId}`, `custom_blocks:${householdId}`]);
       await Promise.all([
         apiFetch("/custom-pages", {
           method: "PUT",
-          body: JSON.stringify({ household_id: HOUSEHOLD_ID, pages: p }),
+          body: JSON.stringify({ household_id: householdId, pages: p }),
         }),
         apiFetch("/custom-blocks", {
           method: "PUT",
-          body: JSON.stringify({ household_id: HOUSEHOLD_ID, blocks: c }),
+          body: JSON.stringify({ household_id: householdId, blocks: c }),
         }),
       ]);
     } catch (err) {
       console.error("Fehler beim Speichern:", err);
     }
-  }, []);
+  }, [householdId]);
 
   const lastLocalListenWrite = useRef(0);
 
@@ -222,8 +222,8 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
   const loadListenData = useCallback(async (isInitial = false) => {
     try {
       const [pRes, bRes] = await Promise.all([
-        apiFetch(`/custom-pages?household_id=${HOUSEHOLD_ID}`),
-        apiFetch(`/custom-blocks?household_id=${HOUSEHOLD_ID}`),
+        apiFetch(`/custom-pages?household_id=${householdId}`),
+        apiFetch(`/custom-blocks?household_id=${householdId}`),
       ]);
       // Skip remote updates if we just wrote locally
       if (!isInitial && Date.now() - lastLocalListenWrite.current < 2000) return;
@@ -273,7 +273,7 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
         setLoaded(true);
       }
     }
-  }, [saveData]);
+  }, [saveData, householdId]);
 
   useEffect(() => {
     loadListenData(true);
@@ -295,7 +295,7 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
 
   // ── Supabase Realtime subscription for live sync ──
   useKvRealtime(
-    [`custom_pages:${HOUSEHOLD_ID}`, `custom_blocks:${HOUSEHOLD_ID}`],
+    [`custom_pages:${householdId}`, `custom_blocks:${householdId}`],
     useCallback(() => loadListenData(false), [loadListenData]),
   );
 
