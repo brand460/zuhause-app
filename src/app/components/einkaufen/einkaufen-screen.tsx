@@ -69,8 +69,8 @@ import {
 import { useBackHandler } from "../ui/use-back-handler";
 import { useAuth } from "../auth-context";
 import { useKeyboardHeight } from "./use-keyboard-height";
-import bagEmptyImg from "figma:asset/7600a694d5105599cb2bd19d670b36821050a74e.png";
-import bagFullImg from "figma:asset/398486aade794d4966e0e4f98a30bcee3925f855.png";
+const bagEmptyImg = '/images/bag-empty.png';
+const bagFullImg = '/images/bag-full.png';
 
 // ── Types ──────────────────────────────────────────────────────────
 interface StoreSettingEntry {
