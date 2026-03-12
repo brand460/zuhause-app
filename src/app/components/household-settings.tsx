@@ -23,11 +23,27 @@ interface Member {
   user_id: string;
   role: string;
   display_name: string;
+  avatar_url?: string | null;
   is_me: boolean;
 }
 
 // ── Avatar ────────────────────────────────────────────────────────
-function Avatar({ name, size = 40 }: { name: string; size?: number }) {
+function Avatar({ name, avatarUrl, size = 40 }: { name: string; avatarUrl?: string | null; size?: number }) {
+  const [imgError, setImgError] = useState(false);
+
+  if (avatarUrl && !imgError) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        onError={() => setImgError(true)}
+        className="rounded-full flex-shrink-0 object-cover"
+        style={{ width: size, height: size }}
+        referrerPolicy="no-referrer"
+      />
+    );
+  }
+
   const initials = name
     .split(" ")
     .map(w => w[0])
@@ -154,6 +170,7 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
           user_id: r.user_id,
           role: r.role,
           display_name: profile?.display_name || "Unbekannt",
+          avatar_url: profile?.avatar_url || null,
           is_me: r.user_id === user.id,
         };
       });
@@ -454,7 +471,7 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
             members.map((m, idx) => (
               <div key={m.user_id}>
                 <div className="flex items-center gap-3 px-4 py-3">
-                  <Avatar name={m.display_name} size={38} />
+                  <Avatar name={m.display_name} avatarUrl={m.avatar_url} size={38} />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-text-1 text-sm truncate">
                       {m.display_name}{m.is_me ? " (du)" : ""}

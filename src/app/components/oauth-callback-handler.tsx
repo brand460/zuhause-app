@@ -115,12 +115,20 @@ export function OAuthCallbackHandler({
                 session.user.user_metadata?.name ||
                 session.user.email?.split("@")[0] ||
                 "Nutzer";
+              const avatarUrl = session.user.user_metadata?.avatar_url || null;
 
               console.log("[OAuth] Neues Profil wird angelegt für:", displayName);
 
               const { error: profileError } = await supabase
                 .from("profiles")
-                .insert({ id: session.user.id, display_name: displayName });
+                .upsert(
+                  {
+                    id: session.user.id,
+                    display_name: displayName,
+                    avatar_url: avatarUrl,
+                  },
+                  { onConflict: "id" }
+                );
 
               if (profileError) {
                 console.error(

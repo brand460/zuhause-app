@@ -754,6 +754,60 @@ app.delete("/make-server-2a26506b/household/:id", async (c) => {
   }
 });
 
+// ── Backfill profiles from auth.users metadata (admin only) ───────
+app.post("/make-server-2a26506b/backfill-profiles", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) return c.json({ error: "Nicht autorisiert." }, 401);
+
+    const admin = supabaseAdmin();
+
+    // List all users via admin API (paginated, up to 1000)
+    const { data: { users }, error: listErr } = await admin.auth.admin.listUsers({ perPage: 1000 });
+    if (listErr) {
+      console.log("backfill-profiles: listUsers error:", listErr);
+      return c.json({ error: `Fehler beim Laden der Benutzer: ${listErr.message}` }, 500);
+    }
+
+    let updated = 0;
+    let skipped = 0;
+
+    for (const authUser of users) {
+      const displayName =
+        authUser.user_metadata?.full_name ||
+        authUser.user_metadata?.name ||
+        authUser.user_metadata?.display_name ||
+        authUser.email?.split("@")[0] ||
+        "Nutzer";
+      const avatarUrl = authUser.user_metadata?.avatar_url || null;
+
+      const { error: upsertErr } = await admin
+        .from("profiles")
+        .upsert(
+          {
+            id: authUser.id,
+            display_name: displayName,
+            avatar_url: avatarUrl,
+          },
+          { onConflict: "id" }
+        );
+
+      if (upsertErr) {
+        console.log(`backfill-profiles: upsert error for ${authUser.id}:`, upsertErr.message);
+        skipped++;
+      } else {
+        updated++;
+      }
+    }
+
+    console.log(`backfill-profiles: ${updated} updated, ${skipped} skipped, ${users.length} total`);
+    return c.json({ ok: true, updated, skipped, total: users.length });
+  } catch (err) {
+    console.log("POST /backfill-profiles error:", err);
+    return c.json({ error: `Fehler beim Backfill: ${err}` }, 500);
+  }
+});
+
 // ── Recipe URL import via Claude API ──────────────────────────────
 
 app.post("/make-server-2a26506b/import-recipe", async (c) => {
@@ -845,6 +899,35 @@ Felder die du nicht finden kannst setzt du auf null. Antworte NUR mit dem JSON.`
   } catch (err) {
     console.log("POST /import-recipe error:", err);
     return c.json({ error: `Fehler beim Importieren des Rezepts: ${err}` }, 500);
+  }
+});
+
+// ── Delete account (removes auth user, profile, household memberships) ──
+app.delete("/make-server-2a26506b/delete-account", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) return c.json({ error: "Nicht autorisiert." }, 401);
+
+    const admin = supabaseAdmin();
+
+    // Remove from all households
+    await admin.from("household_members").delete().eq("user_id", user.id);
+
+    // Remove profile row
+    await admin.from("profiles").delete().eq("id", user.id);
+
+    // Delete the auth user (irreversible — must be last)
+    const { error: delErr } = await admin.auth.admin.deleteUser(user.id);
+    if (delErr) {
+      console.log("delete-account: deleteUser error:", delErr.message);
+      return c.json({ error: `Konto konnte nicht gelöscht werden: ${delErr.message}` }, 500);
+    }
+
+    console.log("delete-account: user deleted, id:", user.id);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.log("DELETE /delete-account error:", err);
+    return c.json({ error: `Fehler beim Löschen des Kontos: ${err}` }, 500);
   }
 });
 

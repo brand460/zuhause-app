@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
 import { HouseholdSettings } from "./household-settings";
+import { ProfilScreen } from "./profil-screen";
 
 interface MehrScreenProps {
   onSignOut: () => void;
@@ -42,9 +43,10 @@ function useTheme() {
 export function MehrScreen({ onSignOut }: MehrScreenProps) {
   const { isDark, toggle } = useTheme();
   const [showHouseholdSettings, setShowHouseholdSettings] = useState(false);
+  const [showProfilScreen, setShowProfilScreen] = useState(false);
 
   const menuItems = [
-    { id: "profile", icon: User, label: "Profil & Konto", danger: false, action: undefined },
+    { id: "profile", icon: User, label: "Profil & Konto", danger: false, action: () => setShowProfilScreen(true) },
     { id: "household", icon: Home, label: "Haushalt verwalten", danger: false, action: () => setShowHouseholdSettings(true) },
     { id: "notifications", icon: Bell, label: "Benachrichtigungen", danger: false, action: undefined },
     { id: "darkmode", icon: isDark ? Sun : Moon, label: "Dark Mode", danger: false, action: toggle, isToggle: true },
@@ -150,6 +152,22 @@ export function MehrScreen({ onSignOut }: MehrScreenProps) {
             style={{ zIndex: 1000, background: "var(--zu-bg)" }}
           >
             <HouseholdSettings onClose={() => setShowHouseholdSettings(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Profil Screen overlay ── */}
+      <AnimatePresence>
+        {showProfilScreen && (
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="absolute inset-0"
+            style={{ zIndex: 1000, background: "var(--zu-bg)" }}
+          >
+            <ProfilScreen onClose={() => setShowProfilScreen(false)} />
           </motion.div>
         )}
       </AnimatePresence>

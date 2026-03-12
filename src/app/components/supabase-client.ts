@@ -23,30 +23,35 @@ export const API_BASE = `${supabaseUrl}/functions/v1/make-server-2a26506b`;
 let _refreshPromise: Promise<string | null> | null = null;
 
 async function getFreshToken(): Promise<string> {
-  const { data: { session } } = await supabase.auth.getSession();
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
 
-  if (!session?.access_token) {
+    if (!session?.access_token) {
+      return publicAnonKey;
+    }
+
+    // Check if token is still valid for more than 60 seconds (increased buffer)
+    const nowSec = Math.floor(Date.now() / 1000);
+    const expiresAt = session.expires_at ?? 0;
+    if (expiresAt - nowSec > 60) {
+      return session.access_token;
+    }
+
+    // Token expiring soon or already expired — refresh exactly once
+    if (!_refreshPromise) {
+      _refreshPromise = supabase.auth
+        .refreshSession()
+        .then(({ data }) => data.session?.access_token ?? null)
+        .catch(() => null)
+        .finally(() => { _refreshPromise = null; });
+    }
+
+    const newToken = await _refreshPromise;
+    return newToken ?? publicAnonKey;
+  } catch (err) {
+    console.log("[getFreshToken] Error:", err);
     return publicAnonKey;
   }
-
-  // Check if token is still valid for more than 30 seconds
-  const nowSec = Math.floor(Date.now() / 1000);
-  const expiresAt = session.expires_at ?? 0;
-  if (expiresAt - nowSec > 30) {
-    return session.access_token;
-  }
-
-  // Token expiring soon — refresh exactly once, even if multiple callers race
-  if (!_refreshPromise) {
-    _refreshPromise = supabase.auth
-      .refreshSession()
-      .then(({ data }) => data.session?.access_token ?? null)
-      .catch(() => null)
-      .finally(() => { _refreshPromise = null; });
-  }
-
-  const newToken = await _refreshPromise;
-  return newToken ?? session.access_token ?? publicAnonKey;
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
@@ -76,13 +81,20 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
       throw new Error(`Netzwerkfehler bei ${options.method || "GET"} ${path}: ${networkErr}`);
     }
 
-    // On 401: force a session refresh once, then retry
-    if (res.status === 401 && attempt === 1) {
-      console.log(`[apiFetch] 401 bei ${path} — erzwinge Token-Refresh und retry...`);
-      try {
-        const { data } = await supabase.auth.refreshSession();
-        token = data.session?.access_token ?? publicAnonKey;
-      } catch {
+    // On 401: force a session refresh, then fall back to publicAnonKey
+    if (res.status === 401 && attempt <= 2) {
+      if (attempt === 1) {
+        console.log(`[apiFetch] 401 bei ${path} — erzwinge Token-Refresh und retry...`);
+        try {
+          const { data } = await supabase.auth.refreshSession();
+          token = data.session?.access_token ?? publicAnonKey;
+        } catch {
+          console.log(`[apiFetch] Token-Refresh fehlgeschlagen, nutze publicAnonKey`);
+          token = publicAnonKey;
+        }
+      } else {
+        // Attempt 2 still 401 — session token is broken, use anon key
+        console.log(`[apiFetch] 401 bei ${path} auch nach Refresh — Fallback auf publicAnonKey`);
         token = publicAnonKey;
       }
       continue;

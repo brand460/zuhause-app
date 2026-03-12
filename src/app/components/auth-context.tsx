@@ -5,6 +5,7 @@ import type { Session, User } from "@supabase/supabase-js";
 interface Profile {
   id: string;
   display_name: string;
+  avatar_url?: string | null;
 }
 
 interface Household {
@@ -32,9 +33,33 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-export function useAuth() {
+const noopAsync = async () => {};
+const noopAsyncId = async () => ({ id: "" });
+
+// Default fallback used when context is missing (e.g. during HMR refresh).
+// Returns a "loading" state so the app shows the splash screen instead of crashing.
+const AUTH_FALLBACK: AuthContextType = {
+  session: null,
+  user: null,
+  profile: null,
+  household: null,
+  loading: true,
+  signIn: noopAsync as any,
+  signUp: noopAsync as any,
+  signInWithGoogle: noopAsync as any,
+  signOut: noopAsync as any,
+  createHousehold: noopAsyncId as any,
+  joinHousehold: noopAsync as any,
+  joinByToken: noopAsync as any,
+  refreshProfile: noopAsync as any,
+};
+
+export function useAuth(): AuthContextType {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  if (!ctx) {
+    console.warn("useAuth called outside AuthProvider — returning loading fallback");
+    return AUTH_FALLBACK;
+  }
   return ctx;
 }
 
@@ -44,6 +69,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [household, setHousehold] = useState<Household | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Ensure profile exists and is up-to-date with auth metadata
+  async function ensureProfile(authUser: User) {
+    const displayName =
+      authUser.user_metadata?.full_name ||
+      authUser.user_metadata?.name ||
+      authUser.user_metadata?.display_name ||
+      authUser.email?.split("@")[0] ||
+      "Nutzer";
+    const avatarUrl = authUser.user_metadata?.avatar_url || null;
+
+    const { error } = await supabase
+      .from("profiles")
+      .upsert(
+        {
+          id: authUser.id,
+          display_name: displayName,
+          avatar_url: avatarUrl,
+        },
+        { onConflict: "id" }
+      );
+
+    if (error) {
+      console.log("ensureProfile upsert error:", error.message);
+    }
+  }
 
   // Load profile and household directly from Supabase tables
   async function loadProfile(userId: string) {
@@ -105,7 +156,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        loadProfile(s.user.id).finally(() => setLoading(false));
+        // Ensure profile is synced on app load
+        ensureProfile(s.user).finally(() =>
+          loadProfile(s.user!.id).finally(() => setLoading(false))
+        );
       } else {
         setLoading(false);
       }
@@ -115,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        loadProfile(s.user.id);
+        ensureProfile(s.user).finally(() => loadProfile(s.user!.id));
       } else {
         setProfile(null);
         setHousehold(null);
@@ -154,15 +208,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (!authUser) throw new Error("Benutzer konnte nicht geladen werden.");
 
-    // 4. Insert profile directly into profiles table using the Supabase client
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .insert({ id: authUser.id, display_name: name });
-
-    if (profileError) {
-      console.log("Profile insert error:", profileError.message);
-      throw new Error(`Profil konnte nicht erstellt werden: ${profileError.message}`);
-    }
+    // 4. Upsert profile with name and avatar
+    await ensureProfile({ ...authUser, user_metadata: { ...authUser.user_metadata, name } } as User);
 
     // 5. Reload profile state
     await loadProfile(authUser.id);
