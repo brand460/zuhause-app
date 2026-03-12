@@ -102,18 +102,43 @@ export function MainShell() {
   const [einkaufenCount, setEinkaufenCount] = useState(0);
   const stableHeight = useStableViewportHeight();
 
+  // ── Global scroll-to-focused: stellt sicher dass das fokussierte Element
+  //    immer über der Tastatur sichtbar ist, egal in welchem Drawer. ──────
+  useEffect(() => {
+    const handleFocusIn = (e: FocusEvent) => {
+      const el = e.target as HTMLElement;
+      if (!el.matches("input, textarea, [contenteditable]")) return;
+      setTimeout(() => {
+        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }, 300);
+    };
+    document.addEventListener("focusin", handleFocusIn);
+    return () => document.removeEventListener("focusin", handleFocusIn);
+  }, []);
+
   // ── OneSignal Push Setup (once after login) ─────────────────────
   const oneSignalInitRef = useRef(false);
   useEffect(() => {
-    if (!user?.id || !householdId || oneSignalInitRef.current) return;
+    if (!user?.id || !householdId) {
+      console.log("[OneSignal/MainShell] Skipping — user:", !!user?.id, "household:", !!householdId);
+      return;
+    }
+    if (oneSignalInitRef.current) {
+      console.log("[OneSignal/MainShell] Already initialized, skipping");
+      return;
+    }
     oneSignalInitRef.current = true;
+
+    console.log("[OneSignal/MainShell] Starting push setup for user:", user.id, "household:", householdId);
 
     (async () => {
       try {
         const playerId = await setupPushForUser(user.id);
+        console.log("[OneSignal/MainShell] setupPushForUser returned:", playerId);
+
         if (playerId) {
-          // Save player ID to server (KV store)
-          await apiFetch("/onesignal/register", {
+          console.log("[OneSignal/MainShell] Registering player ID via /onesignal/register…");
+          const res = await apiFetch("/onesignal/register", {
             method: "POST",
             body: JSON.stringify({
               user_id: user.id,
@@ -121,10 +146,12 @@ export function MainShell() {
               household_id: householdId,
             }),
           });
-          console.log("[OneSignal] Player ID registered:", playerId);
+          console.log("[OneSignal/MainShell] ✅ Registration response:", res);
+        } else {
+          console.log("[OneSignal/MainShell] ⚠️ No player ID returned — push not registered");
         }
       } catch (err) {
-        console.log("[OneSignal] Registration error:", err);
+        console.log("[OneSignal/MainShell] ❌ Registration error:", err);
       }
     })();
   }, [user?.id, householdId]);

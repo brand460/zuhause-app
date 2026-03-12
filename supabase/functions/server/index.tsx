@@ -37,7 +37,7 @@ app.use(
   cors({
     origin: "*",
     allowHeaders: ["Content-Type", "Authorization"],
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     exposeHeaders: ["Content-Length"],
     maxAge: 600,
   }),
@@ -293,7 +293,7 @@ app.get("/make-server-2a26506b/global-items", async (c) => {
 // PUT — upsert a global item (create or increment times_used)
 app.put("/make-server-2a26506b/global-items", async (c) => {
   try {
-    const { household_id, name, category } = await c.req.json();
+    const { household_id, name, category, category_only } = await c.req.json();
     if (!household_id || !name || !category) {
       return c.json({ error: "household_id, name und category sind erforderlich." }, 400);
     }
@@ -303,7 +303,9 @@ app.put("/make-server-2a26506b/global-items", async (c) => {
       (it: any) => it.name.toLowerCase() === name.toLowerCase()
     );
     if (idx >= 0) {
-      existing[idx].times_used = (existing[idx].times_used || 1) + 1;
+      if (!category_only) {
+        existing[idx].times_used = (existing[idx].times_used || 1) + 1;
+      }
       existing[idx].category = category; // update category if changed
     } else {
       existing.push({
@@ -318,6 +320,75 @@ app.put("/make-server-2a26506b/global-items", async (c) => {
   } catch (err) {
     console.log("PUT /global-items error:", err);
     return c.json({ error: `Fehler beim Speichern des globalen Artikels: ${err}` }, 500);
+  }
+});
+
+// DELETE — remove a global item by name
+app.delete("/make-server-2a26506b/global-items", async (c) => {
+  try {
+    const { household_id, name } = await c.req.json();
+    if (!household_id || !name) {
+      return c.json({ error: "household_id und name sind erforderlich." }, 400);
+    }
+    const key = `global_items:${household_id}`;
+    const existing: any[] = (await withRetry(() => kv.get(key))) || [];
+    const filtered = existing.filter(
+      (it: any) => it.name.toLowerCase() !== name.toLowerCase()
+    );
+    await withRetry(() => kv.set(key, filtered));
+    return c.json({ ok: true, items: filtered });
+  } catch (err) {
+    console.log("DELETE /global-items error:", err);
+    return c.json({ error: `Fehler beim Löschen des globalen Artikels: ${err}` }, 500);
+  }
+});
+
+// PATCH — rename a global item
+app.patch("/make-server-2a26506b/global-items", async (c) => {
+  try {
+    const { household_id, old_name, new_name, category } = await c.req.json();
+    if (!household_id || !old_name || !new_name) {
+      return c.json({ error: "household_id, old_name und new_name sind erforderlich." }, 400);
+    }
+    const key = `global_items:${household_id}`;
+    const existing: any[] = (await withRetry(() => kv.get(key))) || [];
+
+    // 1. Suche zuerst nach original_name = oldName (falls Artikel bereits früher umbenannt wurde)
+    let idx = existing.findIndex(
+      (it: any) => it.original_name && it.original_name.toLowerCase() === old_name.toLowerCase()
+    );
+
+    // 2. Falls nicht gefunden: Suche nach name = oldName
+    if (idx < 0) {
+      idx = existing.findIndex(
+        (it: any) => it.name.toLowerCase() === old_name.toLowerCase()
+      );
+    }
+
+    if (idx >= 0) {
+      // Gefunden: umbenennen, original_name nur setzen falls noch nicht vorhanden
+      if (!existing[idx].original_name) {
+        existing[idx].original_name = old_name.trim();
+      }
+      existing[idx].name = new_name.trim();
+    } else if (category) {
+      // Nicht in global_items → kommt aus GROCERY_DATABASE, neu anlegen
+      existing.push({
+        name: new_name.trim(),
+        category,
+        created_by_household_id: household_id,
+        times_used: 1,
+        original_name: old_name.trim(),
+      });
+    } else {
+      return c.json({ error: "Artikel nicht gefunden." }, 404);
+    }
+
+    await withRetry(() => kv.set(key, existing));
+    return c.json({ ok: true, items: existing });
+  } catch (err) {
+    console.log("PATCH /global-items error:", err);
+    return c.json({ error: `Fehler beim Umbenennen des globalen Artikels: ${err}` }, 500);
   }
 });
 
@@ -931,7 +1002,7 @@ app.delete("/make-server-2a26506b/delete-account", async (c) => {
   }
 });
 
-// ── OneSignal Push Notification endpoints ──────────────────────────
+// ── OneSignal Push Notification endpoints ─────────────────────────
 
 const ONESIGNAL_APP_ID = "a72cfa96-92c3-472b-8fa2-6b61bec1d724";
 
@@ -1152,7 +1223,7 @@ Deno.serve(async (req) => {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Max-Age": "600",
       },
     });

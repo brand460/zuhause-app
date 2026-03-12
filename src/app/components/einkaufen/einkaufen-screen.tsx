@@ -19,6 +19,7 @@ import {
   X,
   Store,
   ArrowUpDown,
+  ArrowUp,
   Settings,
   ShoppingBag,
 } from "lucide-react";
@@ -68,7 +69,7 @@ import {
 } from "../use-kv-realtime";
 import { useBackHandler } from "../ui/use-back-handler";
 import { useAuth } from "../auth-context";
-import { useKeyboardHeight } from "./use-keyboard-height";
+import { useKeyboardOffset } from "../ui/use-keyboard-offset";
 const bagEmptyImg = '/images/bag-empty.png';
 const bagFullImg = '/images/bag-full.png';
 
@@ -866,18 +867,19 @@ function CategoryChip({
   selected?: boolean;
   onClick?: () => void;
 }) {
+  const colors = getCategoryChipColor(category);
   return (
     <button
       onClick={onClick}
       onPointerDown={(e) => e.preventDefault()}
       onMouseDown={(e) => e.preventDefault()}
-      className={`flex items-center px-2.5 py-1.5 rounded-full text-sm font-medium transition whitespace-nowrap ${
-        selected
-          ? "bg-surface"
-          : "bg-surface-2 hover:opacity-80"
-      }`}
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full font-medium transition whitespace-nowrap ${ selected ? "bg-surface" : "bg-surface-2 hover:opacity-80" } text-[12px]`}
       style={{ color: "var(--text-1)" }}
     >
+      <span
+        className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{ backgroundColor: colors.dot }}
+      />
       {category}
     </button>
   );
@@ -1010,7 +1012,7 @@ function QuantityDrawer({
     item.quantity.toString(),
   );
   const inputRef = useRef<HTMLInputElement>(null);
-  const kbHeight = useKeyboardHeight();
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
 
   // Focus after ~100ms — the drawer is already partially visible by then,
   // so the keyboard rises together with the slide-up animation.
@@ -1056,16 +1058,12 @@ function QuantityDrawer({
 
   return (
     <motion.div
-      className="fixed inset-0 z-[1000] flex flex-col justify-end"
+      className="fixed inset-0 z-[1000]"
       style={{ touchAction: "none" }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{
-        type: "spring",
-        damping: 25,
-        stiffness: 300,
-      }}
+      transition={{ type: "spring", damping: 25, stiffness: 300 }}
       onTouchMove={(e) => e.preventDefault()}
     >
       <div
@@ -1074,15 +1072,12 @@ function QuantityDrawer({
         aria-hidden="true"
       />
       <motion.div
-        className="relative bg-surface rounded-t-[20px] px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
-        style={{ overscrollBehavior: "contain" }}
-        initial={{ y: "100%", marginBottom: 0 }}
-        animate={{ y: 0, marginBottom: kbHeight }}
-        exit={{ y: "100%", marginBottom: 0 }}
-        transition={{
-          y: { type: "spring", damping: 25, stiffness: 300 },
-          marginBottom: { type: "tween", duration: 0.28, ease: "easeOut" },
-        }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+        style={{ overscrollBehavior: "contain", bottom: bottomOffset, maxHeight: vpHeight - 72 }}
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 25, stiffness: 300 }}
         onTouchMove={(e) => e.stopPropagation()}
       >
         {/* Drag handle */}
@@ -1446,6 +1441,7 @@ function SortableShoppingItem({
               type="search"
               inputMode="text"
               autoComplete="off"
+              autoCapitalize="sentences"
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1710,6 +1706,7 @@ function CategorySortModal({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const isFirstRender = useRef(true);
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
 
   // Auto-focus the search field when drawer opens
   useEffect(() => {
@@ -1813,7 +1810,7 @@ function CategorySortModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[1000] flex items-end justify-center bg-black/40"
+      className="fixed inset-0 z-[1000] bg-black/40"
       style={{ touchAction: "none" }}
       onClick={onClose}
     >
@@ -1827,8 +1824,8 @@ function CategorySortModal({
           stiffness: 300,
         }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full bg-surface rounded-t-[20px] flex flex-col max-h-[80vh]"
-        style={{ boxShadow: "var(--shadow-elevated)" }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] flex flex-col"
+        style={{ boxShadow: "var(--shadow-elevated)", bottom: bottomOffset, maxHeight: vpHeight - 72 }}
       >
         {/* Handle bar */}
         <div className="flex justify-center pt-3 pb-1">
@@ -1850,6 +1847,7 @@ function CategorySortModal({
           style={{
             overscrollBehavior: "contain",
             touchAction: "pan-y",
+            scrollBehavior: "smooth",
           }}
         >
           <DndContext
@@ -1892,6 +1890,7 @@ function CategorySortModal({
                 style={{ WebkitOverflowScrolling: "touch" }}
               >
                 {availableChips.slice(0, 12).map((chip) => {
+                  const chipColor = getCategoryChipColor(chip);
                   return (
                     <button
                       key={chip}
@@ -1903,7 +1902,10 @@ function CategorySortModal({
                         color: "var(--text-1)",
                       }}
                     >
-                      <span style={{ color: "var(--text-2)" }}>+</span>
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: chipColor.dot }}
+                      />
                       {chip}
                     </button>
                   );
@@ -1974,6 +1976,7 @@ function CategorySortModal({
                 ref={inputRef}
                 type="search"
                 autoComplete="off"
+                autoCapitalize="sentences"
                 data-lpignore="true"
                 data-1p-ignore="true"
                 data-form-type="other"
@@ -2186,7 +2189,10 @@ function AddItemBar({
         searchResults[0].category,
       );
     } else {
-      setPendingCustomName(query.trim());
+      // No match → add directly as "Sonstiges" (quick add without category picker)
+      const name = query.trim();
+      onAdd(name, "Sonstiges");
+      setQuickChips((prev) => prev.filter((c) => c !== name));
       setQuery("");
       setShowSuggestions(false);
     }
@@ -2229,6 +2235,8 @@ function AddItemBar({
             }}
           >
             {quickChips.map((chip) => {
+              const chipCategory = findGroceryTemplate(chip, customTemplates)?.category || "Sonstiges";
+              const chipColor = getCategoryChipColor(chipCategory);
               return (
                 <button
                   key={chip}
@@ -2241,7 +2249,10 @@ function AddItemBar({
                     color: "var(--text-1)",
                   }}
                 >
-                  <span style={{ color: "var(--text-2)" }}>+</span>
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: chipColor.dot }}
+                  />
                   {chip}
                 </button>
               );
@@ -2262,6 +2273,7 @@ function AddItemBar({
             >
               <div className="max-h-48 overflow-y-auto">
                 {searchResults.map((result) => {
+                  const resultColor = getCategoryChipColor(result.category);
                   return (
                     <button
                       key={result.name}
@@ -2280,9 +2292,13 @@ function AddItemBar({
                         {result.name}
                       </span>
                       <span
-                        className="text-[10px] ml-2 flex-shrink-0 font-medium"
-                        style={{ color: "var(--text-3)" }}
+                        className="flex items-center gap-1.5 text-[10px] ml-2 flex-shrink-0 font-medium"
+                        style={{ color: "var(--text-2)" }}
                       >
+                        <span
+                          className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: resultColor.dot }}
+                        />
                         {result.category}
                       </span>
                     </button>
@@ -2329,6 +2345,7 @@ function AddItemBar({
               inputMode="text"
               name="add-item-search"
               autoComplete="off"
+              autoCapitalize="sentences"
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2359,6 +2376,17 @@ function AddItemBar({
                 className="text-text-3 hover:text-text-1"
               >
                 <X className="w-4 h-4" />
+              </button>
+            )}
+            {query.trim().length > 0 && (
+              <button
+                type="button"
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={handleSubmit as unknown as React.MouseEventHandler<HTMLButtonElement>}
+                className="flex items-center justify-center w-7 h-7 rounded-full flex-shrink-0"
+                style={{ background: "var(--color-accent)" }}
+              >
+                <ArrowUp className="w-4 h-4 text-white" />
               </button>
             )}
           </div>
@@ -2392,30 +2420,12 @@ function CategoryPickerModal({
   onClose: () => void;
 }) {
   const [filterQuery, setFilterQuery] = useState("");
-  const [bottomOffset, setBottomOffset] = useState(0);
   const filterInputRef = useRef<HTMLInputElement>(null);
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
 
   // Auto-focus the search field when drawer opens
   useEffect(() => {
     setTimeout(() => filterInputRef.current?.focus(), 100);
-  }, []);
-
-  // Track visual viewport to position above keyboard
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const update = () => {
-      const kbHeight =
-        window.innerHeight - vv.height - vv.offsetTop;
-      setBottomOffset(Math.max(0, kbHeight));
-    };
-    update();
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
-    return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
-    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -2448,8 +2458,7 @@ function CategoryPickerModal({
         className="fixed left-0 right-0 w-full bg-surface rounded-t-[20px] flex flex-col"
         style={{
           bottom: bottomOffset,
-          height: "40vh",
-          maxHeight: `calc(100vh - ${bottomOffset}px - 40px)`,
+          maxHeight: vpHeight - 72,
           boxShadow: "var(--shadow-elevated)",
           zIndex: 9999,
         }}
@@ -2481,6 +2490,7 @@ function CategoryPickerModal({
               type="search"
               inputMode="text"
               autoComplete="off"
+              autoCapitalize="sentences"
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2506,6 +2516,7 @@ function CategoryPickerModal({
           style={{
             overscrollBehavior: "contain",
             touchAction: "pan-y",
+            scrollBehavior: "smooth",
           }}
         >
           <div className="flex flex-wrap gap-2">
@@ -2540,25 +2551,7 @@ function AddStoreModal({
   existingStoreIds: Set<string>;
 }) {
   const [query, setQuery] = useState("");
-  const [bottomOffset, setBottomOffset] = useState(0);
-
-  // Track visual viewport to shift modal above keyboard
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const update = () => {
-      const keyboardHeight =
-        window.innerHeight - vv.height - vv.offsetTop;
-      setBottomOffset(Math.max(0, keyboardHeight));
-    };
-    update();
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
-    return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
-    };
-  }, []);
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
 
   const allSuggestions = useMemo(() => {
     const suggestionIds = new Set(
@@ -2625,9 +2618,7 @@ function AddStoreModal({
         className="fixed left-0 right-0 w-full bg-surface rounded-t-[20px] flex flex-col"
         style={{
           bottom: bottomOffset,
-          height: "60vh",
-          minHeight: MIN_HEIGHT,
-          maxHeight: `calc(100vh - ${bottomOffset}px - 40px)`,
+          maxHeight: vpHeight - 72,
           boxShadow: "var(--shadow-elevated)",
         }}
       >
@@ -2653,6 +2644,7 @@ function AddStoreModal({
               autoFocus
               type="search"
               autoComplete="off"
+              autoCapitalize="sentences"
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2671,7 +2663,7 @@ function AddStoreModal({
             )}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 pb-5 min-h-0">
+        <div className="flex-1 overflow-y-auto px-5 pb-5 min-h-0" style={{ scrollBehavior: "smooth" }}>
           <div className="space-y-1">
             {filtered.map((s) => {
               const logoUrl = s.domain

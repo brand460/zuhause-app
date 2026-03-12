@@ -35,6 +35,7 @@ import {
   getColorHex,
 } from "./calendar-types";
 import { useAuth } from "../auth-context";
+import { useKeyboardOffset } from "../ui/use-keyboard-offset";
 
 // ── Constants & Helpers ────────────────────────────────────────────
 
@@ -1145,17 +1146,18 @@ function RecurringPrompt({
   onEditSingle: () => void;
   onCancel: () => void;
 }) {
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
   return (
     <motion.div
-      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      className="fixed inset-0 z-[1000]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={onCancel} />
       <motion.div
-        className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
-        style={{ boxShadow: "var(--shadow-elevated)" }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+        style={{ boxShadow: "var(--shadow-elevated)", bottom: bottomOffset, maxHeight: vpHeight - 72 }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
@@ -1460,6 +1462,8 @@ function DateTimePickerSheet({
     return selected.getTime() <= ref.getTime();
   }, [computeSelectedDate, disabledUntilAfter]);
 
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
+
   const handleDone = () => {
     if (isDisabled) return;
     const newDate = computeSelectedDate();
@@ -1469,15 +1473,15 @@ function DateTimePickerSheet({
 
   return (
     <motion.div
-      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      className="fixed inset-0 z-[1000]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <motion.div
-        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
-        style={{ boxShadow: "var(--shadow-elevated)" }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] flex flex-col"
+        style={{ boxShadow: "var(--shadow-elevated)", bottom: bottomOffset, maxHeight: vpHeight - 72 }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
@@ -1593,6 +1597,7 @@ function CustomNotificationSheet({
   const numberOptions = useMemo(() => Array.from({ length: 60 }, (_, i) => i + 1), []);
   const [numberIdx, setNumberIdx] = useState(9);
   const [unitIdx, setUnitIdx] = useState(0);
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
 
   const handleDone = () => {
     const num = numberOptions[numberIdx];
@@ -1603,15 +1608,15 @@ function CustomNotificationSheet({
 
   return (
     <motion.div
-      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      className="fixed inset-0 z-[1000]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <motion.div
-        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
-        style={{ boxShadow: "var(--shadow-elevated)" }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] flex flex-col"
+        style={{ boxShadow: "var(--shadow-elevated)", bottom: bottomOffset, maxHeight: vpHeight - 72 }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
@@ -1672,17 +1677,18 @@ function PopupSheet({
   children: React.ReactNode;
   onClose: () => void;
 }) {
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
   return (
     <motion.div
-      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      className="fixed inset-0 z-[1000]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <motion.div
-        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
-        style={{ maxHeight: "60dvh", boxShadow: "var(--shadow-elevated)" }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] flex flex-col"
+        style={{ maxHeight: vpHeight - 72, boxShadow: "var(--shadow-elevated)", bottom: bottomOffset }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
@@ -1692,7 +1698,7 @@ function PopupSheet({
         <div className="flex justify-center pt-3 pb-1">
           <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom))]" style={{ scrollBehavior: "smooth" }}>
           {children}
         </div>
       </motion.div>
@@ -1715,9 +1721,10 @@ function DeleteConfirmModal({
   onDeleteFuture?: () => void;
   onCancel: () => void;
 }) {
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
   return (
     <motion.div
-      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      className="fixed inset-0 z-[1000]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -1725,8 +1732,8 @@ function DeleteConfirmModal({
       <div className="absolute inset-0 bg-black/40" onClick={(e) => { e.stopPropagation(); onCancel(); }} />
       {isRecurring ? (
         <motion.div
-          className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
-          style={{ boxShadow: "var(--shadow-elevated)" }}
+          className="absolute left-0 right-0 bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+          style={{ boxShadow: "var(--shadow-elevated)", bottom: bottomOffset, maxHeight: vpHeight - 72 }}
           initial={{ y: "100%" }}
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
@@ -1763,8 +1770,8 @@ function DeleteConfirmModal({
         </motion.div>
       ) : (
         <motion.div
-          className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
-          style={{ boxShadow: "var(--shadow-elevated)" }}
+          className="absolute left-0 right-0 bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+          style={{ boxShadow: "var(--shadow-elevated)", bottom: bottomOffset, maxHeight: vpHeight - 72 }}
           initial={{ y: "100%" }}
           animate={{ y: 0 }}
           exit={{ y: "100%" }}
@@ -1825,9 +1832,10 @@ function NotePickerDrawer({
     return pages.filter((p) => p.title.toLowerCase().includes(q));
   }, [pages, search]);
 
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
   return (
     <motion.div
-      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      className="fixed inset-0 z-[1000]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -1838,8 +1846,8 @@ function NotePickerDrawer({
         onClick={onClose}
       />
       <motion.div
-        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
-        style={{ height: "40dvh", boxShadow: "var(--shadow-elevated)", left: 0, right: 0 }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] flex flex-col"
+        style={{ maxHeight: vpHeight - 72, boxShadow: "var(--shadow-elevated)", bottom: bottomOffset }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
@@ -1863,6 +1871,7 @@ function NotePickerDrawer({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Notiz suchen..."
               autoComplete="off"
+              autoCapitalize="sentences"
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1882,7 +1891,7 @@ function NotePickerDrawer({
         </div>
 
         {/* List */}
-        <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+        <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(0.5rem+env(safe-area-inset-bottom))]" style={{ scrollBehavior: "smooth" }}>
           {/* "Keine Notiz" option */}
           <button
             onClick={() => onSelect(null)}
@@ -1944,9 +1953,11 @@ function RecipePickerDrawer({
     return recipes.filter((r) => r.title.toLowerCase().includes(q));
   }, [recipes, search]);
 
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
+
   return (
     <motion.div
-      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      className="fixed inset-0 z-[1000]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -1957,8 +1968,8 @@ function RecipePickerDrawer({
         onClick={onClose}
       />
       <motion.div
-        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
-        style={{ height: "40dvh", boxShadow: "var(--shadow-elevated)", left: 0, right: 0 }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] flex flex-col"
+        style={{ maxHeight: vpHeight - 72, boxShadow: "var(--shadow-elevated)", bottom: bottomOffset }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
@@ -1982,6 +1993,7 @@ function RecipePickerDrawer({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Rezept suchen..."
               autoComplete="off"
+              autoCapitalize="sentences"
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2001,7 +2013,7 @@ function RecipePickerDrawer({
         </div>
 
         {/* List */}
-        <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+        <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(0.5rem+env(safe-area-inset-bottom))]" style={{ scrollBehavior: "smooth" }}>
           {/* "Kein Rezept" option at the top */}
           <button
             onClick={() => onSelect(null)}
@@ -2114,15 +2126,7 @@ function EventEditorSheet({
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
   // ── visualViewport height for dynamic maxHeight ────────────────
-  const [vpHeight, setVpHeight] = useState(() => window.visualViewport?.height ?? window.innerHeight);
-  useEffect(() => {
-    const vp = window.visualViewport;
-    if (!vp) return;
-    const update = () => setVpHeight(vp.height);
-    vp.addEventListener("resize", update);
-    update();
-    return () => vp.removeEventListener("resize", update);
-  }, []);
+  const { bottomOffset: editorBottomOffset, vpHeight } = useKeyboardOffset();
   // Always leave 72 px visible above the drawer so it looks like a sheet, not a full screen
   const drawerMaxHeight = vpHeight - 72;
 
@@ -2427,15 +2431,15 @@ function EventEditorSheet({
 
   return (
     <motion.div
-      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      className="fixed inset-0 z-[1000]"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
     >
       <div className="absolute inset-0 bg-black/40" onClick={handleCloseAttempt} />
       <motion.div
-        className="relative w-full bg-surface rounded-t-[20px] flex flex-col"
-        style={{ maxHeight: drawerMaxHeight, boxShadow: "var(--shadow-elevated)" }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] flex flex-col"
+        style={{ maxHeight: drawerMaxHeight, boxShadow: "var(--shadow-elevated)", bottom: editorBottomOffset }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
@@ -2477,6 +2481,7 @@ function EventEditorSheet({
               type="search"
               name="cal-event-title"
               autoComplete="off"
+              autoCapitalize="sentences"
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2535,7 +2540,7 @@ function EventEditorSheet({
           </div>
 
         {/* Scrollable form rows */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollBehavior: "smooth" }}>
           {/* Ganztägig */}
           <FormRow icon={<Clock className="w-5 h-5" />}>
             <span className="flex-1 text-sm text-text-1">Ganztägig</span>
@@ -2680,6 +2685,7 @@ function EventEditorSheet({
                   placeholder="Beschreibung hinzufügen..."
                   rows={3}
                   autoComplete="off"
+                  autoCapitalize="sentences"
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"

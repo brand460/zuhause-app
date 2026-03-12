@@ -386,6 +386,7 @@ export function HouseholdSettings({ onClose }: HouseholdSettingsProps) {
                   type="search"
                   name="tuli-hh-rename"
                   autoComplete="off"
+                  autoCapitalize="sentences"
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"

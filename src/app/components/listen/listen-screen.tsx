@@ -1318,6 +1318,7 @@ function SidebarContent(props: SidebarContentProps) {
             onChange={(e) => onSetSearchQuery(e.target.value)}
             className="w-full pl-8 pr-8 py-1.5 text-sm bg-surface-2 rounded-lg border-0 outline-none focus:outline-none placeholder:text-text-3"
             autoComplete="off"
+            autoCapitalize="sentences"
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1637,6 +1638,7 @@ function PageTreeItem(props: PageTreeItemProps) {
             }}
             onClick={(e) => e.stopPropagation()}
             autoComplete="off"
+            autoCapitalize="sentences"
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -3728,6 +3730,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           placeholder="Unbenannt"
           rows={1}
           autoComplete="off"
+          autoCapitalize="sentences"
           data-lpignore="true"
           data-1p-ignore="true"
           data-form-type="other"
@@ -3774,6 +3777,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
+            autoCapitalize="sentences"
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"

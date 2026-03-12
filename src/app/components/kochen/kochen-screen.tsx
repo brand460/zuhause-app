@@ -14,6 +14,7 @@ import type {
 import { RECIPE_CATEGORIES } from "./kochen-types";
 import { useBackHandler, pushBack, popBack } from "../ui/use-back-handler";
 import { useAuth } from "../auth-context";
+import { useKeyboardOffset } from "../ui/use-keyboard-offset";
 
 const DRAWER_SPRING = { type: "spring" as const, damping: 25, stiffness: 300 };
 
@@ -136,6 +137,9 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
 
   // Segmented control
   const [kochenTab, setKochenTab] = useState<"rezepte" | "wochenplaner">("rezepte");
+
+  // ── Keyboard offset for drawers ────────────────────────────────────
+  const { bottomOffset, vpHeight } = useKeyboardOffset();
 
   // ── Back-gesture handlers for drawers/modals ──────────────────────
   useBackHandler(showAddSheet, () => setShowAddSheet(false));
@@ -741,6 +745,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
               name="recipe-search"
               inputMode="text"
               autoComplete="off"
+              autoCapitalize="sentences"
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -863,14 +868,14 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
       <AnimatePresence>
         {deleteConfirm && (
           <motion.div
-            className="fixed inset-0 z-[999] flex items-end"
+            className="fixed inset-0 z-[999]"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={DRAWER_SPRING}
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => setDeleteConfirm(null)} />
             <motion.div
-              className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
-              style={{ boxShadow: "var(--shadow-elevated)" }}
+              className="absolute left-0 right-0 bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+              style={{ boxShadow: "var(--shadow-elevated)", bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
               onClick={(e) => e.stopPropagation()}
@@ -903,14 +908,14 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
       <AnimatePresence>
         {showMoveSheet && moveSourceDate && (
           <motion.div
-            className="fixed inset-0 z-[999] flex items-end"
+            className="fixed inset-0 z-[999]"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={DRAWER_SPRING}
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => { setShowMoveSheet(false); setMoveSourceDate(null); }} />
             <motion.div
-              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] max-h-[50vh]"
-              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)]"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)', bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
               onClick={(e) => e.stopPropagation()}
@@ -957,14 +962,14 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
       <AnimatePresence>
         {showMealPicker && mealPickerDate && (
           <motion.div
-            className="fixed inset-0 z-[999] flex items-end"
+            className="fixed inset-0 z-[999]"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={DRAWER_SPRING}
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => { setShowMealPicker(false); setMealPickerDate(null); setMealPickerSearch(""); }} />
             <motion.div
-              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] max-h-[70vh] flex flex-col"
-              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] flex flex-col"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)', bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
               onClick={(e) => e.stopPropagation()}
@@ -1001,6 +1006,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
                   name="meal-picker-search"
                   inputMode="text"
                   autoComplete="off"
+                  autoCapitalize="sentences"
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
@@ -1012,7 +1018,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
               </div>
             </div>
             {/* Recipe list */}
-            <div className="flex-1 overflow-y-auto px-4 pb-4">
+            <div className="flex-1 overflow-y-auto px-4 pb-4" style={{ scrollBehavior: "smooth" }}>
               {recipes
                 .filter((r) =>
                   !mealPickerSearch.trim() || r.title.toLowerCase().includes(mealPickerSearch.toLowerCase())
@@ -1051,14 +1057,14 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
       <AnimatePresence>
         {showFreetextInput && mealPickerDate && (
           <motion.div
-            className="fixed inset-0 z-[999] flex items-end"
+            className="fixed inset-0 z-[999]"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={DRAWER_SPRING}
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => { setShowFreetextInput(false); setFreetextValue(""); setMealPickerDate(null); }} />
             <motion.div
-              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
-              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)', bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
               onClick={(e) => e.stopPropagation()}
@@ -1072,6 +1078,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
               name="freetext-entry"
               inputMode="text"
               autoComplete="off"
+              autoCapitalize="sentences"
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1097,14 +1104,14 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
       <AnimatePresence>
         {showAddSheet && (
           <motion.div
-            className="fixed inset-0 z-[999] flex items-end"
+            className="fixed inset-0 z-[999]"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={DRAWER_SPRING}
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => setShowAddSheet(false)} />
             <motion.div
-              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
-              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)', bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
               onClick={(e) => e.stopPropagation()}
@@ -1166,14 +1173,14 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
       <AnimatePresence>
         {showUrlImport && (
           <motion.div
-            className="fixed inset-0 z-[999] flex items-end"
+            className="fixed inset-0 z-[999]"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={DRAWER_SPRING}
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => { setShowUrlImport(false); setUrlInput(""); }} />
             <motion.div
-              className="relative w-full rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
-              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)' }}
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)', bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
               onClick={(e) => e.stopPropagation()}
@@ -1267,6 +1274,7 @@ function RecipeDetailView({
   const [comment, setComment] = useState(recipe.comment || "");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   useBackHandler(showDeleteConfirm, () => setShowDeleteConfirm(false));
+  const { bottomOffset: detailBottomOffset, vpHeight: detailVpHeight } = useKeyboardOffset();
   const scale = recipe.servings ? servings / recipe.servings : 1;
   const commentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1420,6 +1428,7 @@ function RecipeDetailView({
             placeholder="Eigene Notizen..."
             name="recipe-comment"
             autoComplete="off"
+            autoCapitalize="sentences"
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1441,14 +1450,14 @@ function RecipeDetailView({
       <AnimatePresence>
         {showDeleteConfirm && (
           <motion.div
-            className="fixed inset-0 z-[999] flex items-end"
+            className="fixed inset-0 z-[999]"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={DRAWER_SPRING}
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => setShowDeleteConfirm(false)} />
             <motion.div
-              className="relative w-full bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
-              style={{ boxShadow: "var(--shadow-elevated)" }}
+              className="absolute left-0 right-0 bg-surface rounded-t-[20px] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+              style={{ boxShadow: "var(--shadow-elevated)", bottom: detailBottomOffset, maxHeight: detailVpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
               onClick={(e) => e.stopPropagation()}
@@ -1566,6 +1575,7 @@ function RecipeEditView({
             name="recipe-title"
             inputMode="text"
             autoComplete="off"
+            autoCapitalize="sentences"
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1582,6 +1592,7 @@ function RecipeEditView({
             placeholder="Kurze Beschreibung..."
             name="recipe-desc"
             autoComplete="off"
+            autoCapitalize="sentences"
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1727,6 +1738,7 @@ function RecipeEditView({
                   name="ing-qty"
                   inputMode="text"
                   autoComplete="off"
+                  autoCapitalize="sentences"
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
@@ -1740,6 +1752,7 @@ function RecipeEditView({
                   name="ing-unit"
                   inputMode="text"
                   autoComplete="off"
+                  autoCapitalize="sentences"
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
@@ -1753,6 +1766,7 @@ function RecipeEditView({
                   name="ing-name"
                   inputMode="text"
                   autoComplete="off"
+                  autoCapitalize="sentences"
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
@@ -1786,6 +1800,7 @@ function RecipeEditView({
                   placeholder={`Schritt ${i + 1}...`}
                   name="recipe-step"
                   autoComplete="off"
+                  autoCapitalize="sentences"
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
@@ -1828,17 +1843,18 @@ function IngredientsModal({
   onSkip: () => void;
 }) {
   const activeStores = stores.filter((s: any) => s.isActive !== false);
+  const { bottomOffset: ingBottomOffset, vpHeight: ingVpHeight } = useKeyboardOffset();
 
   return (
     <motion.div
-      className="fixed inset-0 z-[999] flex items-end"
+      className="fixed inset-0 z-[999]"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       transition={DRAWER_SPRING}
     >
       <div className="absolute inset-0 bg-black/40" onClick={onSkip} />
       <motion.div
-        className="relative w-full bg-surface rounded-t-[20px] pb-[env(safe-area-inset-bottom)] max-h-[70vh] flex flex-col"
-        style={{ boxShadow: "var(--shadow-elevated)" }}
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] pb-[env(safe-area-inset-bottom)] flex flex-col"
+        style={{ boxShadow: "var(--shadow-elevated)", bottom: ingBottomOffset, maxHeight: ingVpHeight - 72 }}
         initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={DRAWER_SPRING}
         onClick={(e) => e.stopPropagation()}

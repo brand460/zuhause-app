@@ -9,11 +9,13 @@ import {
   LogOut,
   ChevronRight,
   ChevronLeft,
+  Package,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "motion/react";
 import { HouseholdSettings } from "./household-settings";
 import { ProfilScreen } from "./profil-screen";
+import { MeineArtikelScreen } from "./meine-artikel-screen";
 
 interface MehrScreenProps {
   onSignOut: () => void;
@@ -46,10 +48,12 @@ export function MehrScreen({ onSignOut }: MehrScreenProps) {
   const [showHouseholdSettings, setShowHouseholdSettings] = useState(false);
   const [showProfilScreen, setShowProfilScreen] = useState(false);
   const [showAboutScreen, setShowAboutScreen] = useState(false);
+  const [showMeineArtikel, setShowMeineArtikel] = useState(false);
 
   const menuItems = [
     { id: "profile", icon: User, label: "Profil & Konto", danger: false, action: () => setShowProfilScreen(true) },
     { id: "household", icon: Home, label: "Haushalt verwalten", danger: false, action: () => setShowHouseholdSettings(true) },
+    { id: "meine-artikel", icon: Package, label: "Alle Artikel", danger: false, action: () => setShowMeineArtikel(true) },
     { id: "notifications", icon: Bell, label: "Benachrichtigungen", danger: false, action: undefined },
     { id: "darkmode", icon: isDark ? Sun : Moon, label: "Dark Mode", danger: false, action: toggle, isToggle: true },
     { id: "info", icon: Info, label: "Über die App", danger: false, action: () => setShowAboutScreen(true) },
@@ -188,6 +192,22 @@ export function MehrScreen({ onSignOut }: MehrScreenProps) {
             style={{ zIndex: 1000, background: "var(--zu-bg)" }}
           >
             <AboutScreen onClose={() => setShowAboutScreen(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Meine Artikel overlay ── */}
+      <AnimatePresence>
+        {showMeineArtikel && (
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="absolute inset-0"
+            style={{ zIndex: 1000, background: "var(--zu-bg)" }}
+          >
+            <MeineArtikelScreen onClose={() => setShowMeineArtikel(false)} />
           </motion.div>
         )}
       </AnimatePresence>

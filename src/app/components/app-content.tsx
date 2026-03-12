@@ -79,10 +79,10 @@ function AppRouter() {
 
 export function AppContent() {
   return (
-    <OAuthCallbackHandler>
-      <AuthProvider>
+    <AuthProvider>
+      <OAuthCallbackHandler>
         <AppRouter />
-      </AuthProvider>
-    </OAuthCallbackHandler>
+      </OAuthCallbackHandler>
+    </AuthProvider>
   );
 }

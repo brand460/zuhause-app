@@ -394,6 +394,7 @@ export function ProfilScreen({ onClose }: ProfilScreenProps) {
                 <input
                   type="search"
                   autoComplete="off"
+                  autoCapitalize="sentences"
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
