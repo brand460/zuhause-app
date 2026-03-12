@@ -478,10 +478,22 @@ function getEventPillStyle(color: EventColor, isDark: boolean): { bg: string; te
   return lightMap[color] ?? lightMap.orange;
 }
 
+// ── useIsDesktop hook ──────────────────────────────────────────────
+function useIsDesktop() {
+  const [desktop, setDesktop] = useState(() => window.innerWidth >= 768);
+  useEffect(() => {
+    const fn = () => setDesktop(window.innerWidth >= 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return desktop;
+}
+
 // ── Main Component ─────────────────────────────────────────────────
 
 export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, itemId?: string | null) => void } = {}) {
   const { householdId, householdMembers: authMembers } = useAuth();
+  const isDesktop = useIsDesktop();
   const today = useMemo(() => new Date(), []);
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
@@ -885,83 +897,118 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
     // Screen container: fills the MainShell "absolute inset-0" slot.
     // paddingTop pushes content below the status bar via safe-area-inset-top.
     <div
-      className="absolute inset-0 flex flex-col overflow-hidden"
-      style={{ paddingTop: "env(safe-area-inset-top)" }}
+      className="absolute inset-0 overflow-hidden"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        display: "flex",
+        flexDirection: isDesktop ? "row" : "column",
+      }}
     >
-      {/* Screen Header */}
-      <div className="flex-shrink-0 px-4 pt-4 pb-2" style={{ background: "var(--zu-bg)" }}>
-        <h2 className="text-lg font-bold text-text-1">Kalender</h2>
-      </div>
-
-      {/* Month Header */}
-      <div className="flex-shrink-0 flex items-center justify-between px-5 py-2 bg-surface rounded-t-[16px]">
-        <button
-          onClick={() => animateToMonth("prev")}
-          className="w-7 h-7 rounded-lg flex items-center justify-center text-text-3 hover:text-text-1 hover:bg-surface-2 transition"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <h2 className="text-sm font-bold text-text-1">
-          {MONTHS_DE[currentMonth]} {currentYear}
-        </h2>
-        <button
-          onClick={() => animateToMonth("next")}
-          className="w-7 h-7 rounded-lg flex items-center justify-center text-text-3 hover:text-text-1 hover:bg-surface-2 transition"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
-
-      {/* Calendar Grid — 3-panel track: [prev] [current] [next]
-          height: 58dvh — fixed proportion of the dynamic viewport height.
-          dvh already accounts for browser chrome / address bar on mobile.
-          The grid never scrolls; MonthGrid rows distribute height via flex:1. */}
+      {/* ── LEFT COLUMN: Calendar header + grid ──────────────────── */}
       <div
-        className="flex-shrink-0 bg-surface px-1 pb-1 pt-1 overflow-hidden rounded-b-[16px]"
-        style={{ boxShadow: "var(--shadow-card)", height: "58dvh" }}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
+        style={isDesktop
+          ? { flex: "0 0 75%", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }
+          : { display: "flex", flexDirection: "column", flexShrink: 0 }
+        }
       >
-        <div
-          ref={trackRef}
-          style={{
-            display: "flex",
-            width: "300%",
-            height: "100%",
-            transform: "translateX(-33.3333%)",
-            willChange: "transform",
-          }}
-        >
-          <MonthGrid
-            data={prevData}
-            selectedDate={selectedDate}
-            highlightMonth={prevMonth}
-            today={today}
-            isDark={isDark}
-            onDayClick={handleDayClick}
-          />
-          <MonthGrid
-            data={curData}
-            selectedDate={selectedDate}
-            highlightMonth={currentMonth}
-            today={today}
-            isDark={isDark}
-            onDayClick={handleDayClick}
-          />
-          <MonthGrid
-            data={nextData}
-            selectedDate={selectedDate}
-            highlightMonth={nextMonth}
-            today={today}
-            isDark={isDark}
-            onDayClick={handleDayClick}
-          />
+        {/* Screen Header */}
+        <div className="flex-shrink-0 px-4 pt-4 pb-2" style={{ background: "var(--zu-bg)" }}>
+          <h2 className="text-lg font-bold text-text-1">Kalender</h2>
         </div>
-      </div>
 
-      {/* Event Panel — takes all remaining space; min-height so it's always visible */}
-      <div className="flex flex-col min-h-0 overflow-hidden" style={{ flex: 1, minHeight: 120, background: "var(--zu-bg)" }}>
-        <div className="flex-shrink-0 flex items-center justify-between px-5 py-3">
+        {/* Month Header */}
+        <div className="flex-shrink-0 flex items-center justify-between px-5 py-2 bg-surface rounded-t-[16px]">
+          <button
+            onClick={() => animateToMonth("prev")}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-text-3 hover:text-text-1 hover:bg-surface-2 transition"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <h2 className="text-sm font-bold text-text-1">
+            {MONTHS_DE[currentMonth]} {currentYear}
+          </h2>
+          <button
+            onClick={() => animateToMonth("next")}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-text-3 hover:text-text-1 hover:bg-surface-2 transition"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Calendar Grid — 3-panel track: [prev] [current] [next]
+            Mobile: fixed 58dvh. Desktop: flex:1 to fill column height. */}
+        <div
+          className="bg-surface px-1 pb-1 pt-1 overflow-hidden rounded-b-[16px]"
+          style={{
+            boxShadow: "var(--shadow-card)",
+            ...(isDesktop
+              ? { flex: 1, minHeight: 0 }
+              : { flexShrink: 0, height: "58dvh" }
+            ),
+          }}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div
+            ref={trackRef}
+            style={{
+              display: "flex",
+              width: "300%",
+              height: "100%",
+              transform: "translateX(-33.3333%)",
+              willChange: "transform",
+            }}
+          >
+            <MonthGrid
+              data={prevData}
+              selectedDate={selectedDate}
+              highlightMonth={prevMonth}
+              today={today}
+              isDark={isDark}
+              onDayClick={handleDayClick}
+            />
+            <MonthGrid
+              data={curData}
+              selectedDate={selectedDate}
+              highlightMonth={currentMonth}
+              today={today}
+              isDark={isDark}
+              onDayClick={handleDayClick}
+            />
+            <MonthGrid
+              data={nextData}
+              selectedDate={selectedDate}
+              highlightMonth={nextMonth}
+              today={today}
+              isDark={isDark}
+              onDayClick={handleDayClick}
+            />
+          </div>
+        </div>
+      </div>{/* end left column */}
+
+      {/* ── RIGHT COLUMN / Event Panel ────────────────────────────── */}
+      <div
+        style={isDesktop
+          ? {
+              flex: "0 0 25%",
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              background: "var(--zu-bg)",
+            }
+          : {
+              flex: 1,
+              minHeight: 120,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              background: "var(--zu-bg)",
+            }
+        }
+      >
+        <div className="flex-shrink-0 flex items-center justify-between px-[20px] pt-[48px] pb-[12px]">
           <h3 className="text-sm font-bold text-text-1">{formatDateLong(selectedDate)}</h3>
           <button
             onClick={handleNewEvent}
@@ -973,7 +1020,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
 
         {/* paddingBottom includes env(safe-area-inset-bottom) for the gesture bar */}
         <div
-          className="flex-1 min-h-0 px-4 overflow-y-auto"
+          className="flex-1 min-h-0 overflow-y-auto px-[16px] pt-[0px] pb-[16px]"
           style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
         >
           {selectedDayEvents.length === 0 ? (
@@ -1751,9 +1798,6 @@ function NotePickerDrawer({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Notiz suchen..."
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1873,9 +1917,6 @@ function RecipePickerDrawer({
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Rezept suchen..."
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2353,9 +2394,6 @@ function EventEditorSheet({
               type="search"
               name="cal-event-title"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2559,9 +2597,6 @@ function EventEditorSheet({
                   placeholder="Beschreibung hinzufügen..."
                   rows={3}
                   autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"

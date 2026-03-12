@@ -70,9 +70,6 @@ function OInput({
       type="search"
       name={name}
       autoComplete="off"
-      autoCorrect="off"
-      autoCapitalize="off"
-      spellCheck={false}
       data-lpignore="true"
       data-1p-ignore="true"
       data-form-type="other"

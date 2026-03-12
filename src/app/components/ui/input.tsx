@@ -8,9 +8,6 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
       type={type}
       data-slot="input"
       autoComplete="off"
-      autoCorrect="off"
-      autoCapitalize="off"
-      spellCheck={false}
       data-lpignore="true"
       data-1p-ignore="true"
       data-form-type="other"

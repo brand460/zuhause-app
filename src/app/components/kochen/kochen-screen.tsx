@@ -741,9 +741,6 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
               name="recipe-search"
               inputMode="text"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1004,9 +1001,6 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
                   name="meal-picker-search"
                   inputMode="text"
                   autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
@@ -1078,9 +1072,6 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
               name="freetext-entry"
               inputMode="text"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1195,9 +1186,6 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
               type="search"
               name="recipe-url-import"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1432,9 +1420,6 @@ function RecipeDetailView({
             placeholder="Eigene Notizen..."
             name="recipe-comment"
             autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1581,9 +1566,6 @@ function RecipeEditView({
             name="recipe-title"
             inputMode="text"
             autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1600,9 +1582,6 @@ function RecipeEditView({
             placeholder="Kurze Beschreibung..."
             name="recipe-desc"
             autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1622,9 +1601,6 @@ function RecipeEditView({
             name="recipe-image-url"
             inputMode="text"
             autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1643,9 +1619,6 @@ function RecipeEditView({
             name="recipe-source-url"
             inputMode="text"
             autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1662,9 +1635,6 @@ function RecipeEditView({
               inputMode="numeric"
               name="recipe-prep-time"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1680,9 +1650,6 @@ function RecipeEditView({
               inputMode="numeric"
               name="recipe-cook-time"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1698,9 +1665,6 @@ function RecipeEditView({
               inputMode="numeric"
               name="recipe-servings"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1763,9 +1727,6 @@ function RecipeEditView({
                   name="ing-qty"
                   inputMode="text"
                   autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
@@ -1779,9 +1740,6 @@ function RecipeEditView({
                   name="ing-unit"
                   inputMode="text"
                   autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
@@ -1795,9 +1753,6 @@ function RecipeEditView({
                   name="ing-name"
                   inputMode="text"
                   autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"
@@ -1831,9 +1786,6 @@ function RecipeEditView({
                   placeholder={`Schritt ${i + 1}...`}
                   name="recipe-step"
                   autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="off"
-                  spellCheck={false}
                   data-lpignore="true"
                   data-1p-ignore="true"
                   data-form-type="other"

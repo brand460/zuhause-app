@@ -377,6 +377,7 @@ function StoreSelector({
   onStoreReorderEnd,
   transferHoveredStoreId,
   isTransferActive,
+  isDesktop,
 }: {
   stores: StoreInfo[];
   selectedStore: string;
@@ -388,6 +389,7 @@ function StoreSelector({
   onStoreReorderEnd: (event: DragEndEvent) => void;
   transferHoveredStoreId?: string | null;
   isTransferActive?: boolean;
+  isDesktop?: boolean;
 }) {
   const longPressTimer = useRef<ReturnType<
     typeof setTimeout
@@ -468,7 +470,7 @@ function StoreSelector({
     <div>
       <div
         className={`flex items-center gap-2 px-4 py-3 scrollbar-hide ${isReorderMode ? "overflow-x-auto scroll-smooth" : "overflow-x-auto"}`}
-        style={{ WebkitOverflowScrolling: "touch" }}
+        style={{ WebkitOverflowScrolling: "touch", justifyContent: isDesktop ? "center" : undefined }}
       >
         {isReorderMode ? (
           <DndContext
@@ -1103,9 +1105,6 @@ function QuantityDrawer({
             inputMode="decimal"
             name="qty-drawer-input"
             autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1447,9 +1446,6 @@ function SortableShoppingItem({
               type="search"
               inputMode="text"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -1978,9 +1974,6 @@ function CategorySortModal({
                 ref={inputRef}
                 type="search"
                 autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
                 data-lpignore="true"
                 data-1p-ignore="true"
                 data-form-type="other"
@@ -2336,9 +2329,6 @@ function AddItemBar({
               inputMode="text"
               name="add-item-search"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2491,9 +2481,6 @@ function CategoryPickerModal({
               type="search"
               inputMode="text"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2666,9 +2653,6 @@ function AddStoreModal({
               autoFocus
               type="search"
               autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
               data-lpignore="true"
               data-1p-ignore="true"
               data-form-type="other"
@@ -2843,6 +2827,17 @@ const StableDndContext = React.memo(function StableDndContext({
   );
 });
 
+// ── useIsDesktop hook ─────────────────────────────────────────────────
+function useIsDesktop() {
+  const [desktop, setDesktop] = useState(() => window.innerWidth >= 768);
+  useEffect(() => {
+    const fn = () => setDesktop(window.innerWidth >= 768);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return desktop;
+}
+
 // ── Main Einkaufen Screen ──────────────────────────────────────────
 export function EinkaufenScreen({
   onItemCountChange,
@@ -2850,6 +2845,7 @@ export function EinkaufenScreen({
   onItemCountChange?: (count: number) => void;
 }) {
   const { householdId } = useAuth();
+  const isDesktop = useIsDesktop();
   const [items, setItems] = useState<ShoppingItem[]>([]);
   const [stores, setStores] =
     useState<StoreInfo[]>(DEFAULT_STORES);
@@ -4156,9 +4152,13 @@ export function EinkaufenScreen({
   return (
     <div
       ref={containerRef}
-      className="flex-1 min-h-0 relative overflow-hidden"
+      className="flex-1 min-h-0 overflow-hidden"
       style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "stretch",
         background: "var(--zu-bg)",
+        position: "relative",
         overscrollBehavior: "none",
       }}
     >
@@ -4204,6 +4204,7 @@ export function EinkaufenScreen({
           onStoreReorderEnd={handleStoreReorderEnd}
           transferHoveredStoreId={hoveredStoreId}
           isTransferActive={storeTransferActive}
+          isDesktop={isDesktop}
         />
       </div>
 
@@ -4227,6 +4228,7 @@ export function EinkaufenScreen({
           overscrollBehavior: "contain",
         }}
       >
+        <div style={isDesktop ? { maxWidth: 680, margin: "0 auto", width: "100%" } : undefined}>
         {!loaded ? (
           <div className="flex items-center justify-center py-20">
             <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
@@ -4319,6 +4321,7 @@ export function EinkaufenScreen({
             )}
           </SortableContext>
         </StableDndContext>
+        </div>{/* end max-width wrapper */}
 
       </div>
 
@@ -4333,11 +4336,13 @@ export function EinkaufenScreen({
           zIndex: 90,
         }}
       >
-        <CheckedSection
-          items={checkedItems}
-          onToggle={handleToggle}
-          onClearAll={handleClearChecked}
-        />
+        <div style={isDesktop ? { maxWidth: 680, margin: "0 auto", width: "100%" } : undefined}>
+          <CheckedSection
+            items={checkedItems}
+            onToggle={handleToggle}
+            onClearAll={handleClearChecked}
+          />
+        </div>
       </div>
 
       {/* ── AddItemBar ──────────────────────────────────────────────────

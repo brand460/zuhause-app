@@ -1314,9 +1314,6 @@ function SidebarContent(props: SidebarContentProps) {
             onChange={(e) => onSetSearchQuery(e.target.value)}
             className="w-full pl-8 pr-8 py-1.5 text-sm bg-surface-2 rounded-lg border-0 outline-none focus:outline-none placeholder:text-text-3"
             autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1636,9 +1633,6 @@ function PageTreeItem(props: PageTreeItemProps) {
             }}
             onClick={(e) => e.stopPropagation()}
             autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
@@ -1987,6 +1981,21 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     const sel = window.getSelection();
     sel?.removeAllRanges();
     sel?.addRange(r);
+  }, []);
+
+  // ── Helper: scroll current cursor block into view (keyboard-safe) ──
+  const scrollCursorIntoView = useCallback(() => {
+    requestAnimationFrame(() => {
+      const sel = window.getSelection();
+      if (!sel?.rangeCount) return;
+      const node = sel.getRangeAt(0).startContainer;
+      let el: HTMLElement | null = node instanceof HTMLElement ? node : node.parentElement;
+      while (el && el !== editorRef.current) {
+        if (el.parentElement === editorRef.current) break;
+        el = el.parentElement;
+      }
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    });
   }, []);
 
   // Get indent level of an <li> or .editor-todo
@@ -3211,6 +3220,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           blockEl.replaceWith(hr);
           hr.after(newP);
           placeCursorAtStart(newP);
+          scrollCursorIntoView();
           syncContent();
           return;
         }
@@ -3225,6 +3235,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
             newP.innerHTML = "<br>";
             blockEl.replaceWith(newP);
             placeCursorAtStart(newP);
+            scrollCursorIntoView();
             syncContent();
             return;
           }
@@ -3245,6 +3256,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           newTodo.appendChild(newText);
           blockEl.after(newTodo);
           placeCursorAtStart(newText);
+          scrollCursorIntoView();
           syncContent();
           return;
         }
@@ -3285,6 +3297,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
             }
 
             placeCursorAtStart(li);
+            scrollCursorIntoView();
           } else {
             // Top-level: exit list, insert <p>
             const newP = document.createElement("p");
@@ -3311,6 +3324,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
             }
 
             placeCursorAtStart(newP);
+            scrollCursorIntoView();
           }
 
           syncContent();
@@ -3320,6 +3334,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
         // All other Enter: let browser handle natively
         // (new <p>, new <li> in list with content, etc.)
         setTimeout(syncContent, 0);
+        scrollCursorIntoView();
         return;
       }
 
@@ -3460,7 +3475,7 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
 
       // All other keys: onInput will fire syncContent for character keys
     },
-    [getBlockElement, findClosestTag, syncContent, placeCursorAtStart, slashOpen, slashFiltered, slashIdx, closeSlashMenu, executeSlashCommand]
+    [getBlockElement, findClosestTag, syncContent, placeCursorAtStart, scrollCursorIntoView, slashOpen, slashFiltered, slashIdx, closeSlashMenu, executeSlashCommand]
   );
 
   // ── Click handler for to-do checkboxes ──
@@ -3650,6 +3665,24 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
     }
   }, [focusTitle, onClearFocusTitle]);
 
+  // ── visualViewport resize: shrink scroll container when keyboard opens (iOS) ──
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const handleViewportResize = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const top = container.getBoundingClientRect().top;
+      const available = vv.height - top;
+      container.style.maxHeight = `${Math.max(100, available)}px`;
+    };
+    vv.addEventListener("resize", handleViewportResize);
+    return () => {
+      vv.removeEventListener("resize", handleViewportResize);
+      if (containerRef.current) containerRef.current.style.maxHeight = "";
+    };
+  }, []);
+
   return (
     <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-hide relative">
       <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 pb-40 md:max-w-none md:mx-0 md:pl-4 md:pr-4">
@@ -3691,9 +3724,6 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
           placeholder="Unbenannt"
           rows={1}
           autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          spellCheck={false}
           data-lpignore="true"
           data-1p-ignore="true"
           data-form-type="other"
@@ -3740,13 +3770,11 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
             data-lpignore="true"
             data-1p-ignore="true"
             data-form-type="other"
             className="editor-content outline-none min-h-[200px]"
+            style={{ caretColor: "var(--text-1)" }}
             onInput={handleInput}
             onKeyDown={handleKeyDown}
             onClick={(e) => {

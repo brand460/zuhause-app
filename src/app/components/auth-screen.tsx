@@ -376,10 +376,12 @@ export function AuthScreen({ pendingInvite }: { pendingInvite?: boolean }) {
     <div
       className="flex flex-col font-sans"
       style={{
-        minHeight: "100dvh",
-        background: "var(--zu-bg)",
+        position: "fixed",
+        inset: 0,
         overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
         overscrollBehavior: "contain",
+        background: "var(--zu-bg)",
       }}
     >
       <div style={{ height: "env(safe-area-inset-top, 0px)" }} />

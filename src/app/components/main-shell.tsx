@@ -162,7 +162,7 @@ export function MainShell() {
 
         {/* Bottom Navigation */}
         <nav className="flex-shrink-0 bg-surface pb-[env(safe-area-inset-bottom)]" style={{ borderTop: "1px solid var(--zu-border)" }}>
-          <div className="flex items-center justify-around px-2 pt-2 pb-2">
+          <div className="flex items-center justify-around px-2 pt-2 pb-2" style={{ maxWidth: 680, margin: "0 auto" }}>
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               const { PhosphorIcon } = tab;

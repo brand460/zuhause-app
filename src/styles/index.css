@@ -17,7 +17,22 @@
 input, textarea, [contenteditable] {
   -webkit-user-select: text;
   user-select: text;
-  caret-color: var(--accent);
+  caret-color: var(--text-1);
+}
+
+/* Kind-Elemente innerhalb contentEditable müssen ebenfalls selektierbar sein
+   (z.B. .editor-todo-text, <li>, <td> — sonst verschwindet der Cursor) */
+[contenteditable] * {
+  -webkit-user-select: text;
+  user-select: text;
+  caret-color: var(--text-1);
+}
+
+/* Ausnahme: nicht-editierbare Spans innerhalb contentEditable (z.B. Checkbox) */
+[contenteditable] [contenteditable="false"] {
+  -webkit-user-select: none;
+  user-select: none;
+  caret-color: transparent;
 }
 
 /* Nativen Browser-Clear-Button bei type="search" ausblenden —
