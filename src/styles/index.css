@@ -18,6 +18,14 @@ input, textarea, [contenteditable] {
   -webkit-user-select: text;
   user-select: text;
   caret-color: var(--text-1);
+  /* iOS zooms in when font-size < 16px, causing a visible page-scroll jank
+     every time an input is focused. min-font-size of 16px prevents this.
+     Visual appearance is controlled by the component's own class (text-sm etc.)
+     via transform-based Tailwind — this only overrides the *computed* value
+     that iOS reads when deciding whether to zoom. */
+  font-size: max(16px, 1em) !important;
+  /* Prevent double-tap zoom delays on input elements */
+  touch-action: manipulation;
 }
 
 /* Kind-Elemente innerhalb contentEditable müssen ebenfalls selektierbar sein

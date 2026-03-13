@@ -47,60 +47,11 @@ function PlaceholderScreen({ title }: { title: string }) {
   );
 }
 
-/**
- * Use a stable viewport height that doesn't shrink when the virtual keyboard opens.
- * We capture window.innerHeight on mount and only update it when the keyboard is NOT visible
- * (i.e. the viewport grows back to full size).
- */
-function useStableViewportHeight() {
-  const [height, setHeight] = useState(() => window.innerHeight);
-  const stableRef = useRef(window.innerHeight);
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-
-    // Capture the initial full height
-    stableRef.current = Math.max(stableRef.current, window.innerHeight);
-
-    const onResize = () => {
-      // Only update height when keyboard is NOT visible (viewport ~= full height)
-      // A keyboard is typically >100px, so if the visual viewport is close to
-      // window.innerHeight, the keyboard is closed.
-      const diff = Math.abs(window.innerHeight - vv.height);
-      if (diff < 100) {
-        const newH = window.innerHeight;
-        stableRef.current = newH;
-        setHeight(newH);
-      }
-    };
-
-    // Also handle orientation change / real resize (not keyboard)
-    const onWindowResize = () => {
-      const vv2 = window.visualViewport;
-      const diff = vv2 ? Math.abs(window.innerHeight - vv2.height) : 0;
-      if (diff < 100) {
-        stableRef.current = window.innerHeight;
-        setHeight(window.innerHeight);
-      }
-    };
-
-    vv.addEventListener("resize", onResize);
-    window.addEventListener("resize", onWindowResize);
-    return () => {
-      vv.removeEventListener("resize", onResize);
-      window.removeEventListener("resize", onWindowResize);
-    };
-  }, []);
-
-  return height;
-}
-
 export function MainShell() {
   const { signOut, user, householdId } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId>("einkaufen");
   const [einkaufenCount, setEinkaufenCount] = useState(0);
-  const stableHeight = useStableViewportHeight();
+  // stableHeight removed — layout is now CSS-only, no JS-driven height
 
   // ── Global scroll-to-focused: stellt sicher dass das fokussierte Element
   //    immer über der Tastatur sichtbar ist, egal in welchem Drawer. ──────
@@ -109,6 +60,15 @@ export function MainShell() {
       const el = e.target as HTMLElement;
       if (!el.matches("input, textarea, [contenteditable]")) return;
       setTimeout(() => {
+        // On iOS, skip scrollIntoView when the element is already within
+        // the visual viewport — iOS performs its own scroll-to-focus, and
+        // running scrollIntoView simultaneously causes a visible up-down jank.
+        const vv = window.visualViewport;
+        if (vv) {
+          const rect = el.getBoundingClientRect();
+          // getBoundingClientRect() coords are relative to the visual viewport
+          if (rect.top >= 0 && rect.bottom <= vv.height) return;
+        }
         el.scrollIntoView({ block: "nearest", behavior: "smooth" });
       }, 300);
     };
@@ -181,14 +141,38 @@ export function MainShell() {
 
   return (
     <ThemeColorProvider>
+      {/*
+       * Outer wrapper: pure CSS fixed inset-0, NO JS-driven height.
+       * Using CSS keeps this container stable even when iOS shrinks
+       * window.innerHeight / visualViewport.height on keyboard open.
+       */}
       <div
-        className="flex flex-col overflow-hidden font-sans"
-        style={{ height: stableHeight, position: "fixed", top: 0, left: 0, right: 0, background: "var(--zu-bg)" }}
+        className="overflow-hidden font-sans"
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: "var(--zu-bg)",
+        }}
       >
         <Toaster position="top-center" richColors />
 
-        {/* Content — tabs are lazy-mounted on first visit, then kept alive via CSS hidden */}
-        <div className="flex-1 min-h-0 flex flex-col relative">
+        {/*
+         * Content area: absolute, leaves room at the bottom for the nav bar.
+         * NAV_HEIGHT (64px) + safe-area-inset-bottom ensures content is never
+         * hidden behind the nav or the iOS home indicator.
+         */}
+        <div
+          className="absolute flex flex-col"
+          style={{
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: "calc(64px + env(safe-area-inset-bottom, 0px))",
+          }}
+        >
           {visitedTabs.has("kalender") && (
             <div className={`absolute inset-0 flex flex-col overflow-hidden ${activeTab === "kalender" ? "" : "hidden"}`}>
               <KalenderScreen onNavigate={handleNavigate} />
@@ -216,8 +200,29 @@ export function MainShell() {
           )}
         </div>
 
-        {/* Bottom Navigation */}
-        <nav className="flex-shrink-0 bg-surface pb-[env(safe-area-inset-bottom)]" style={{ borderTop: "1px solid var(--zu-border)" }}>
+        {/*
+         * Bottom Navigation:
+         * - position: fixed; bottom: 0  →  anchored to the CSS layout viewport,
+         *   completely independent of any parent flex/height changes.
+         * - NO bottomOffset from useKeyboardOffset — the keyboard must never
+         *   push this bar upward.
+         * - padding-bottom: env(safe-area-inset-bottom) handles the iOS home
+         *   indicator so tap targets stay above it.
+         * - The 64px height (pt-2 + pb-2 + h-12 buttons) matches the reserved
+         *   bottom space in the content area above.
+         */}
+        <nav
+          className="bg-surface"
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 50,
+            borderTop: "1px solid var(--zu-border)",
+            paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          }}
+        >
           <div className="flex items-center justify-around px-2 pt-2 pb-2" style={{ maxWidth: 680, margin: "0 auto" }}>
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
