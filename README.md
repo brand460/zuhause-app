@@ -1,7 +1,7 @@
 
-  # App creation instructions
+  # Tuli
 
-  This is a code bundle for App creation instructions. The original project is available at https://www.figma.com/design/BFfeUah6JfEMU3tAXWSWWf/App-creation-instructions.
+  This is a code bundle for Tuli. The original project is available at https://www.figma.com/design/BFfeUah6JfEMU3tAXWSWWf/Tuli.
 
   ## Running the code
 

@@ -373,11 +373,24 @@ export function AuthScreen({ pendingInvite }: { pendingInvite?: boolean }) {
   const [tab, setTab] = useState<Tab>("login");
 
   return (
+    /*
+     * Outer scroll container
+     * ─────────────────────
+     * • position fixed (top/left/right only — NO bottom / inset: 0) so the
+     *   element is NOT clamped to the viewport height.
+     * • min-height: 100dvh  → covers the full screen when keyboard is closed;
+     *   dvh shrinks when keyboard opens, so the container can grow taller than
+     *   the visible area → overflow-y: auto kicks in → content is scrollable.
+     * • NO height / height: 100vh — that re-introduces the fixed-height problem.
+     */
     <div
       className="flex flex-col font-sans"
       style={{
         position: "fixed",
-        inset: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        minHeight: "100dvh",
         overflowY: "auto",
         WebkitOverflowScrolling: "touch",
         overscrollBehavior: "contain",
@@ -387,8 +400,8 @@ export function AuthScreen({ pendingInvite }: { pendingInvite?: boolean }) {
       <div style={{ height: "env(safe-area-inset-top, 0px)" }} />
 
       {/* ── Form container mit max-width für Desktop ── */}
-      <div className="w-full mx-auto px-6 pt-12 pb-10" style={{ maxWidth: 440 }}>
-
+      {/* padding-bottom: 40px gibt unterhalb des letzten Buttons genug Luft */}
+      <div className="w-full mx-auto px-6 pt-12" style={{ maxWidth: 440, paddingBottom: 40 }}>
         {/* ── Logo ── */}
         <div className="flex flex-col items-center" style={{ marginBottom: 36 }}>
           <TuliLogo size={72} />

@@ -31,6 +31,9 @@ interface AuthContextType {
   householdId: string | null;
   householdMembers: HouseholdMember[];
   loading: boolean;
+  /** true while the household check is in-flight after a SIGNED_IN event.
+   *  The router must not show OnboardingScreen while this is true. */
+  isLoadingHousehold: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
@@ -58,6 +61,7 @@ const AUTH_FALLBACK: AuthContextType = {
   householdId: null,
   householdMembers: [],
   loading: true,
+  isLoadingHousehold: true,
   signIn: noopAsync as any,
   signUp: noopAsync as any,
   signInWithGoogle: noopAsync as any,
@@ -84,6 +88,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [household, setHousehold] = useState<Household | null>(null);
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
   const [loading, setLoading] = useState(true);
+  // Separate flag for post-login household fetch so the router never shows
+  // OnboardingScreen during the brief gap between user being set and household loading.
+  const [isLoadingHousehold, setIsLoadingHousehold] = useState(false);
   const profileChannelRef = useRef<RealtimeChannel | null>(null);
 
   // Ensure profile exists and is up-to-date with auth metadata
@@ -260,12 +267,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        ensureProfile(s.user).finally(() => loadProfile(s.user!.id));
+        // SIGNED_IN fires on every login (password, OAuth, magic link).
+        // INITIAL_SESSION fires on page load — already covered by `loading = true`
+        // from the getSession path, so no extra flag needed there.
+        if (event === "SIGNED_IN") {
+          setIsLoadingHousehold(true);
+        }
+        ensureProfile(s.user).finally(() =>
+          loadProfile(s.user!.id).finally(() => setIsLoadingHousehold(false))
+        );
       } else {
+        setIsLoadingHousehold(false);
         setProfile(null);
         setHousehold(null);
         setHouseholdMembers([]);
@@ -467,6 +483,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         householdId: household?.id ?? null,
         householdMembers,
         loading,
+        isLoadingHousehold,
         signIn,
         signUp,
         signInWithGoogle,

@@ -1014,15 +1014,20 @@ function QuantityDrawer({
   const inputRef = useRef<HTMLInputElement>(null);
   const { bottomOffset, vpHeight } = useKeyboardOffset();
 
-  // Focus after ~100ms — the drawer is already partially visible by then,
-  // so the keyboard rises together with the slide-up animation.
-  // preventScroll stops the browser from scrolling the background list.
-  useEffect(() => {
-    const t = setTimeout(
-      () => inputRef.current?.focus({ preventScroll: true }),
-      100,
-    );
-    return () => clearTimeout(t);
+  // Guard so we only auto-focus once — on the *enter* animation completing.
+  // onAnimationComplete also fires on the exit animation, so the ref
+  // prevents a second (unwanted) focus call during close.
+  const hasAutoFocused = useRef(false);
+
+  const focusInput = useCallback(() => {
+    if (hasAutoFocused.current) return;
+    hasAutoFocused.current = true;
+    // Small extra delay so iOS has time to finish compositing the fully-
+    // settled drawer before we invoke the keyboard.
+    // preventScroll stops the background list from jumping.
+    setTimeout(() => {
+      inputRef.current?.focus({ preventScroll: true });
+    }, 50);
   }, []);
 
   const handleUnitChange = (newUnit: UnitType) => {
@@ -1073,11 +1078,20 @@ function QuantityDrawer({
       />
       <motion.div
         className="absolute left-0 right-0 bg-surface rounded-t-[20px] px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
-        style={{ overscrollBehavior: "contain", bottom: bottomOffset, maxHeight: vpHeight - 72 }}
+        style={{
+          overscrollBehavior: "contain",
+          bottom: bottomOffset,
+          maxHeight: vpHeight - 72,
+          // Smooth the `bottom` jump when the keyboard opens after focus —
+          // without this the drawer snaps instantly from 0 → ~344 px which
+          // can confuse iOS into dismissing the keyboard.
+          transition: "bottom 0.22s cubic-bezier(0.25, 1, 0.5, 1)",
+        }}
         initial={{ y: "100%" }}
         animate={{ y: 0 }}
         exit={{ y: "100%" }}
         transition={{ type: "spring", damping: 25, stiffness: 300 }}
+        onAnimationComplete={focusInput}
         onTouchMove={(e) => e.stopPropagation()}
       >
         {/* Drag handle */}

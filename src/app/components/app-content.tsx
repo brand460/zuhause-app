@@ -38,13 +38,18 @@ function extractInviteFromUrl(): string | null {
 
 // ── Router ─────────────────────────────────────────────────────
 function AppRouter() {
-  const { session, household, loading } = useAuth();
+  const { session, household, loading, isLoadingHousehold } = useAuth();
 
   // Capture invite token once on mount; survives auth flow via state
   const [pendingToken] = useState<string | null>(extractInviteFromUrl);
 
   // ── Loading splash ─────────────────────────────────────────
-  if (loading) {
+  // Show spinner while:
+  //  • initial auth check is still running (loading)
+  //  • user just logged in and household check is in-flight (isLoadingHousehold)
+  //    → prevents the OnboardingScreen from flashing during the gap between
+  //      user being set and loadProfile completing.
+  if (loading || isLoadingHousehold) {
     return (
       <div
         className="flex flex-col items-center justify-center font-sans"
@@ -69,6 +74,8 @@ function AppRouter() {
   }
 
   // ── Logged in but no household → Onboarding ───────────────
+  // Only reached when isLoadingHousehold is false, so household === null
+  // means the user genuinely has no household (not just "not loaded yet").
   if (!household) {
     return <OnboardingScreen pendingToken={pendingToken} />;
   }

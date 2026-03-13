@@ -16,6 +16,8 @@ import {
   FolderPlus,
   Trash2,
 } from "lucide-react";
+import { ArrowCounterClockwise } from "phosphor-react";
+import { toast } from "sonner";
 import { apiFetch } from "../supabase-client";
 import { useKvRealtime, broadcastChange } from "../use-kv-realtime";
 import { useBackHandler } from "../ui/use-back-handler";
@@ -507,6 +509,25 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
   );
   const activeContent = activePageId ? pageContents[activePageId] || "" : "";
 
+  // ── Checkbox detection & reset ─────────────────────────────────
+  /** true when the active page contains at least one checkbox (editor-todo) block */
+  const activePageHasCheckboxes = useMemo(
+    () => activeContent.includes("editor-todo"),
+    [activeContent]
+  );
+
+  const resetCheckboxes = useCallback(() => {
+    if (!activePageId) return;
+    // Parse stored HTML, uncheck every .editor-todo block, write back
+    const tmp = document.createElement("div");
+    tmp.innerHTML = activeContent;
+    tmp.querySelectorAll(".editor-todo").forEach((el) => {
+      el.setAttribute("data-checked", "false");
+    });
+    updatePageContent(activePageId, tmp.innerHTML);
+    toast("Alle Checkboxen zurückgesetzt");
+  }, [activePageId, activeContent, updatePageContent]);
+
   // ── Search ─────────────────────────────────────────────────────
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -662,6 +683,8 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
             }}
             onContentChange={(html) => updatePageContent(activePage.id, html)}
             onOpenEmojiPicker={() => setEmojiPickerPageId(activePage.id)}
+            hasCheckboxes={activePageHasCheckboxes}
+            onResetCheckboxes={resetCheckboxes}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-text-3">
@@ -1763,6 +1786,8 @@ interface PageEditorProps {
   onUpdatePage: (updates: Partial<Page>) => void;
   onContentChange: (html: string) => void;
   onOpenEmojiPicker: () => void;
+  hasCheckboxes?: boolean;
+  onResetCheckboxes?: () => void;
 }
 
 // ── Slash-command menu items ──
@@ -1777,7 +1802,7 @@ const SLASH_ITEMS = [
   { id: "table", label: "Tabelle", icon: "\ud83d\udcca" },
 ];
 
-function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage, onContentChange, onOpenEmojiPicker }: PageEditorProps) {
+function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage, onContentChange, onOpenEmojiPicker, hasCheckboxes, onResetCheckboxes }: PageEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -3692,13 +3717,26 @@ function PageEditor({ page, content, focusTitle, onClearFocusTitle, onUpdatePage
   return (
     <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-hide relative">
       <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 pb-40 md:max-w-none md:mx-0 md:pl-4 md:pr-4">
-        {/* Page icon */}
-        <button
-          onClick={onOpenEmojiPicker}
-          className="text-4xl mb-2 hover:bg-surface-2 rounded-xl p-2 -ml-2 transition"
-        >
-          {page.icon}
-        </button>
+        {/* Page icon row — icon left, reset button right (same height) */}
+        <div className="flex items-start justify-between mb-2">
+          <button
+            onClick={onOpenEmojiPicker}
+            className="text-4xl hover:bg-surface-2 rounded-xl p-2 -ml-2 transition"
+          >
+            {page.icon}
+          </button>
+
+          {hasCheckboxes && onResetCheckboxes && (
+            <button
+              onClick={onResetCheckboxes}
+              className="flex items-center justify-center rounded-xl active:bg-surface-2 hover:bg-surface-2 transition-colors text-text-2"
+              style={{ minWidth: 44, minHeight: 44 }}
+              title="Alle Checkboxen zurücksetzen"
+            >
+              <ArrowCounterClockwise size={20} weight="bold" />
+            </button>
+          )}
+        </div>
 
         {/* Page title */}
         <textarea
