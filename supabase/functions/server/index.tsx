@@ -1160,16 +1160,25 @@ app.post("/make-server-2a26506b/send-notifications", async (c) => {
 
         // Get OneSignal player IDs for recipients from KV
         const playerKeys = recipientIds.map((uid: string) => `onesignal_player:${uid}`);
-        let playerData: any[];
-        try {
-          playerData = await kv.mget(playerKeys);
-        } catch {
-          playerData = [];
+        console.log(`send-notifications: querying player keys:`, playerKeys);
+
+        const { data: playerRows, error: playerErr } = await admin
+          .from("kv_store_2a26506b")
+          .select("key, value")
+          .in("key", playerKeys);
+
+        if (playerErr) {
+          console.log(`send-notifications: player KV query error:`, playerErr.message);
         }
 
-        const playerIds = playerData
-          .filter((d: any) => d && d.player_id)
-          .map((d: any) => d.player_id);
+        const playerIds = (playerRows || [])
+          .map((row: any) => {
+            const val = typeof row.value === "string" ? JSON.parse(row.value) : row.value;
+            return val?.player_id;
+          })
+          .filter(Boolean);
+
+        console.log(`send-notifications: Player IDs found:`, playerIds);
 
         if (playerIds.length === 0) {
           console.log(`send-notifications: no player IDs for event ${target.eventId} recipients`);
@@ -1196,9 +1205,12 @@ app.post("/make-server-2a26506b/send-notifications", async (c) => {
             }),
           });
 
+          // Read body once — used for both logging and error handling
+          const osJson = await osRes.json();
+          console.log(`send-notifications: OneSignal response for event ${target.eventId}:`, osJson);
+
           if (!osRes.ok) {
-            const errText = await osRes.text();
-            console.log(`send-notifications: OneSignal API error for event ${target.eventId}:`, errText);
+            console.log(`send-notifications: OneSignal API error for event ${target.eventId}:`, osJson);
           } else {
             sent++;
             // Mark as sent for deduplication
