@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Plus,
   X,
   Clock,
@@ -17,6 +18,8 @@ import {
   Check,
   Users,
   Search,
+  AlignLeft,
+  CheckSquare,
 } from "lucide-react";
 import { CookingPot, Notepad } from "phosphor-react";
 import { apiFetch } from "../supabase-client";
@@ -28,6 +31,7 @@ import {
   EventColor,
   RepeatRule,
   NotificationMinutes,
+  ChecklistItem,
   REPEAT_OPTIONS,
   DEFAULT_LABELS,
   HouseholdMember,
@@ -629,7 +633,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
   useBackHandler(showEditor, () => { setShowEditor(false); setEditingEvent(null); });
   useBackHandler(showRecurringPrompt, () => { setShowRecurringPrompt(false); setPendingEdit(null); });
 
-  // ── Event CRUD ─────────────────────────────────────────────────
+  // ── Event CRUD ───────────────────────────────────���─────────────
 
   const updateEvents = useCallback(
     (newEvents: CalendarEvent[]) => {
@@ -660,6 +664,9 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
       linked_recipe_id: null,
       linked_list_id: null,
       linked_page_id: null,
+      linked_page_ids: [],
+      linked_recipe_ids: [],
+      checklist: [],
     });
     setShowEditor(true);
   };
@@ -710,6 +717,9 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
           color: ev.color,
           notification_minutes: ev.notification_minutes,
           notifications: ev.notifications,
+          linked_page_ids: ev.linked_page_ids,
+          linked_recipe_ids: ev.linked_recipe_ids,
+          checklist: ev.checklist,
         };
         return { ...e, recurring_edits: edits };
       });
@@ -742,6 +752,10 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
               color: ev.color,
               notification_minutes: ev.notification_minutes,
               notifications: ev.notifications,
+              assigned_to: ev.assigned_to,
+              linked_page_ids: ev.linked_page_ids,
+              linked_recipe_ids: ev.linked_recipe_ids,
+              checklist: ev.checklist,
             };
             return { ...e, recurring_edits: edits };
           });
@@ -1033,9 +1047,10 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
               {selectedDayEvents.map((ev) => {
                 const hasAssigned = ev.assigned_to && ev.assigned_to.length > 0;
                 const hasNote = !!ev.description;
-                const hasLink = ev.linked_recipe_id != null || ev.linked_list_id != null || ev.linked_page_id != null;
+                const hasChecklist = ev.checklist && ev.checklist.length > 0;
+                const hasLink = (ev.linked_recipe_ids?.length ?? 0) > 0 || (ev.linked_page_ids?.length ?? 0) > 0 || ev.linked_recipe_id != null || ev.linked_list_id != null || ev.linked_page_id != null;
                 const hasRepeat = ev.repeat_rule !== "none";
-                const hasMeta = hasAssigned || hasNote || hasLink || hasRepeat;
+                const hasMeta = hasAssigned || hasNote || hasChecklist || hasLink || hasRepeat;
 
                 return (
                   <button
@@ -1085,6 +1100,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
                             </div>
                           )}
                           {hasNote && <FileText className="w-4 h-4 text-text-3 flex-shrink-0" />}
+                          {hasChecklist && <CheckSquare className="w-4 h-4 text-text-3 flex-shrink-0" />}
                           {hasLink && <Link className="w-4 h-4 text-text-3 flex-shrink-0" />}
                           {hasRepeat && <Repeat className="w-4 h-4 text-text-3 flex-shrink-0" />}
                         </div>
@@ -1809,13 +1825,13 @@ function DeleteConfirmModal({
 
 function NotePickerDrawer({
   pages,
-  selectedPageId,
+  alreadyLinkedIds,
   onSelect,
   onClose,
 }: {
   pages: { id: string; title: string; icon: string; parent_id: string | null; position: number }[];
-  selectedPageId: string | null;
-  onSelect: (pageId: string | null) => void;
+  alreadyLinkedIds: string[];
+  onSelect: (pageId: string) => void;
   onClose: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -1827,10 +1843,11 @@ function NotePickerDrawer({
   }, []);
 
   const filteredPages = useMemo(() => {
-    if (!search.trim()) return pages;
+    const base = pages.filter((p) => !alreadyLinkedIds.includes(p.id));
+    if (!search.trim()) return base;
     const q = search.trim().toLowerCase();
-    return pages.filter((p) => p.title.toLowerCase().includes(q));
-  }, [pages, search]);
+    return base.filter((p) => p.title.toLowerCase().includes(q));
+  }, [pages, search, alreadyLinkedIds]);
 
   const { bottomOffset, vpHeight } = useKeyboardOffset();
   return (
@@ -1877,7 +1894,7 @@ function NotePickerDrawer({
               data-form-type="other"
               inputMode="text"
               className="flex-1 text-sm text-text-1 placeholder:text-text-3 outline-none bg-transparent"
-              style={{ caretColor: "#F97316" }}
+              style={{ caretColor: "var(--accent)" }}
             />
             {search && (
               <button
@@ -1892,16 +1909,6 @@ function NotePickerDrawer({
 
         {/* List */}
         <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(0.5rem+env(safe-area-inset-bottom))]" style={{ scrollBehavior: "smooth" }}>
-          {/* "Keine Notiz" option */}
-          <button
-            onClick={() => onSelect(null)}
-            className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
-            style={{ borderBottom: "1px solid var(--zu-border)" }}
-          >
-            <span className="flex-1 text-sm text-text-1 text-left">Keine Notiz</span>
-            {selectedPageId === null && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
-          </button>
-
           {filteredPages.map((page) => (
             <button
               key={page.id}
@@ -1911,13 +1918,12 @@ function NotePickerDrawer({
             >
               <span className="text-base flex-shrink-0">{page.icon || "📄"}</span>
               <span className="flex-1 text-sm text-text-1 text-left truncate">{page.title || "Ohne Titel"}</span>
-              {selectedPageId === page.id && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
             </button>
           ))}
 
-          {filteredPages.length === 0 && search.trim() && (
+          {filteredPages.length === 0 && (
             <div className="px-5 py-6 text-center">
-              <p className="text-sm text-text-3">Keine Notizen gefunden</p>
+              <p className="text-sm text-text-3">{search.trim() ? "Keine Notizen gefunden" : "Keine weiteren Notizen verfügbar"}</p>
             </div>
           )}
         </div>
@@ -1930,13 +1936,13 @@ function NotePickerDrawer({
 
 function RecipePickerDrawer({
   recipes,
-  selectedRecipeId,
+  alreadyLinkedIds,
   onSelect,
   onClose,
 }: {
   recipes: { id: string; title: string; description: string; categories: string[]; image_url: string | null }[];
-  selectedRecipeId: string | null;
-  onSelect: (recipeId: string | null) => void;
+  alreadyLinkedIds: string[];
+  onSelect: (recipeId: string) => void;
   onClose: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -1948,10 +1954,11 @@ function RecipePickerDrawer({
   }, []);
 
   const filteredRecipes = useMemo(() => {
-    if (!search.trim()) return recipes;
+    const base = recipes.filter((r) => !alreadyLinkedIds.includes(r.id));
+    if (!search.trim()) return base;
     const q = search.trim().toLowerCase();
-    return recipes.filter((r) => r.title.toLowerCase().includes(q));
-  }, [recipes, search]);
+    return base.filter((r) => r.title.toLowerCase().includes(q));
+  }, [recipes, search, alreadyLinkedIds]);
 
   const { bottomOffset, vpHeight } = useKeyboardOffset();
 
@@ -1999,7 +2006,7 @@ function RecipePickerDrawer({
               data-form-type="other"
               inputMode="text"
               className="flex-1 text-sm text-text-1 placeholder:text-text-3 outline-none bg-transparent"
-              style={{ caretColor: "#F97316" }}
+              style={{ caretColor: "var(--accent)" }}
             />
             {search && (
               <button
@@ -2014,16 +2021,6 @@ function RecipePickerDrawer({
 
         {/* List */}
         <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(0.5rem+env(safe-area-inset-bottom))]" style={{ scrollBehavior: "smooth" }}>
-          {/* "Kein Rezept" option at the top */}
-          <button
-            onClick={() => onSelect(null)}
-            className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
-            style={{ borderBottom: "1px solid var(--zu-border)" }}
-          >
-            <span className="flex-1 text-sm text-text-1 text-left">Kein Rezept</span>
-            {selectedRecipeId === null && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
-          </button>
-
           {filteredRecipes.map((recipe) => (
             <button
               key={recipe.id}
@@ -2033,19 +2030,31 @@ function RecipePickerDrawer({
             >
               <span className="text-base flex-shrink-0">🍳</span>
               <span className="flex-1 text-sm text-text-1 text-left truncate">{recipe.title}</span>
-              {selectedRecipeId === recipe.id && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
             </button>
           ))}
 
-          {filteredRecipes.length === 0 && search.trim() && (
+          {filteredRecipes.length === 0 && (
             <div className="px-5 py-6 text-center">
-              <p className="text-sm text-text-3">Keine Rezepte gefunden</p>
+              <p className="text-sm text-text-3">{search.trim() ? "Keine Rezepte gefunden" : "Keine weiteren Rezepte verfügbar"}</p>
             </div>
           )}
         </div>
       </motion.div>
     </motion.div>
   );
+}
+
+// ── Migrate legacy single IDs to arrays ────────────────────────────
+function migrateEventLinks(ev: CalendarEvent): { pageIds: string[]; recipeIds: string[] } {
+  let pageIds = ev.linked_page_ids ? [...ev.linked_page_ids] : [];
+  if (ev.linked_page_id && !pageIds.includes(ev.linked_page_id)) {
+    pageIds = [ev.linked_page_id, ...pageIds];
+  }
+  let recipeIds = ev.linked_recipe_ids ? [...ev.linked_recipe_ids] : [];
+  if (ev.linked_recipe_id && !recipeIds.includes(ev.linked_recipe_id)) {
+    recipeIds = [ev.linked_recipe_id, ...recipeIds];
+  }
+  return { pageIds, recipeIds };
 }
 
 // ── Event Editor Bottom Sheet ──────────────────────────────────────
@@ -2080,7 +2089,7 @@ function EventEditorSheet({
   onNavigate?: (tab: string, itemId?: string | null) => void;
   onClose: () => void;
 }) {
-  const { householdId } = useAuth();
+  const { householdId, user } = useAuth();
   const [title, setTitle] = useState(event.title);
   const [startTime, setStartTime] = useState(event.start_time);
   const [endTime, setEndTime] = useState(event.end_time);
@@ -2093,9 +2102,24 @@ function EventEditorSheet({
     if (event.notification_minutes > 0) return [event.notification_minutes];
     return [];
   });
-  const [assignedTo, setAssignedTo] = useState<string[]>(event.assigned_to || []);
-  const [linkedPageId, setLinkedPageId] = useState<string | null>(event.linked_page_id ?? null);
-  const [linkedRecipeId, setLinkedRecipeId] = useState<string | null>(event.linked_recipe_id ?? null);
+  const [assignedTo, setAssignedTo] = useState<string[]>(() => {
+    if (event.assigned_to?.length) return [...event.assigned_to];
+    // Default for new events: only creator
+    if (!event.id && user?.id) return [user.id];
+    return [];
+  });
+
+  // ── Migrate linked IDs from legacy single to arrays ────────────
+  const migrated = useMemo(() => migrateEventLinks(event), [event]);
+  const [linkedPageIds, setLinkedPageIds] = useState<string[]>(migrated.pageIds);
+  const [linkedRecipeIds, setLinkedRecipeIds] = useState<string[]>(migrated.recipeIds);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(event.checklist || []);
+
+  // ── Progressive disclosure state ──────────────────────────────
+  const [showMoreSection, setShowMoreSection] = useState(false);
+  const [hasDescription, setHasDescription] = useState(!!event.description);
+  const [hasChecklist, setHasChecklist] = useState((event.checklist?.length ?? 0) > 0);
+  // Active attachments are always visible above the "Mehr" expander — no auto-expand needed.
 
   // ── Auto-adjust endTime when startTime changes ─────────────────
   const prevStartRef = useRef(startTime);
@@ -2106,12 +2130,11 @@ function EventEditorSheet({
     const currentEndMs = new Date(endTime).getTime();
     const prevDiff = currentEndMs - prevStartMs;
     const ONE_HOUR = 3600000;
-    // Adjust if: end <= new start, OR gap was still the default 1h
     if (currentEndMs <= newStartMs || prevDiff === ONE_HOUR) {
       setEndTime(new Date(newStartMs + ONE_HOUR).toISOString());
     }
     prevStartRef.current = startTime;
-  }, [startTime]); // intentionally not including endTime to avoid loops
+  }, [startTime]);
 
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
@@ -2119,15 +2142,12 @@ function EventEditorSheet({
   const [showRepeatPopup, setShowRepeatPopup] = useState(false);
   const [showNotificationPopup, setShowNotificationPopup] = useState(false);
   const [showCustomNotification, setShowCustomNotification] = useState(false);
-  const [editingNote, setEditingNote] = useState(!!event.description);
   const [showRecipePickerDrawer, setShowRecipePickerDrawer] = useState(false);
   const [showNotePickerDrawer, setShowNotePickerDrawer] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
 
-  // ── visualViewport height for dynamic maxHeight ────────────────
   const { bottomOffset: editorBottomOffset, vpHeight } = useKeyboardOffset();
-  // Always leave 72 px visible above the drawer so it looks like a sheet, not a full screen
   const drawerMaxHeight = vpHeight - 72;
 
   // ── Back-gesture handlers for sub-drawers ─────────────────────
@@ -2167,16 +2187,6 @@ function EventEditorSheet({
     })();
   }, []);
 
-  const linkedPage = useMemo(
-    () => linkedPageId ? availablePages.find((p) => p.id === linkedPageId) || null : null,
-    [linkedPageId, availablePages]
-  );
-
-  const linkedRecipe = useMemo(
-    () => linkedRecipeId ? availableRecipes.find((r) => r.id === linkedRecipeId) || null : null,
-    [linkedRecipeId, availableRecipes]
-  );
-
   const isNew = !event.id;
 
   // ── Autocomplete suggestions ──────────────────────────────────
@@ -2189,8 +2199,11 @@ function EventEditorSheet({
     notifications: number[];
     notification_minutes: NotificationMinutes;
     linked_recipe_id: string | null;
+    linked_recipe_ids?: string[];
     linked_list_id: string | null;
     linked_page_id: string | null;
+    linked_page_ids?: string[];
+    checklist?: ChecklistItem[];
     all_day: boolean;
     assigned_to?: string[];
   }
@@ -2200,20 +2213,16 @@ function EventEditorSheet({
   const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
-  // Search past events for autocomplete
   useEffect(() => {
     if (!isNew) { setSuggestions([]); return; }
     if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
-
     if (!title.trim() || title.trim().length < 1) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
-
     suggestDebounceRef.current = setTimeout(() => {
       const query = title.trim().toLowerCase();
-      // Group events by title (case-insensitive), pick the most recent occurrence
       const titleMap = new Map<string, CalendarEvent>();
       for (const ev of allEvents) {
         const evStart = new Date(ev.start_time);
@@ -2225,7 +2234,6 @@ function EventEditorSheet({
           titleMap.set(key, ev);
         }
       }
-      // Take up to 5 suggestions sorted by most recent
       const results = Array.from(titleMap.values())
         .sort((a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())
         .slice(0, 5)
@@ -2238,47 +2246,47 @@ function EventEditorSheet({
           notifications: ev.notifications || (ev.notification_minutes > 0 ? [ev.notification_minutes] : []),
           notification_minutes: ev.notification_minutes,
           linked_recipe_id: ev.linked_recipe_id,
+          linked_recipe_ids: ev.linked_recipe_ids,
           linked_list_id: ev.linked_list_id,
           linked_page_id: ev.linked_page_id,
+          linked_page_ids: ev.linked_page_ids,
+          checklist: ev.checklist,
           all_day: ev.all_day,
           assigned_to: ev.assigned_to,
         }));
-
       setSuggestions(results);
       setShowSuggestions(results.length > 0);
     }, 200);
-
-    return () => {
-      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
-    };
+    return () => { if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current); };
   }, [title, allEvents, dismissedTitles]);
 
   const handleSelectSuggestion = useCallback((s: AutocompleteSuggestion) => {
-    // Pre-fill title
     setTitle(s.title);
-
-    // Pre-fill time: keep the selected date but use the old event's time-of-day & duration
     const oldStart = new Date(s.start_time);
     const oldEnd = new Date(s.end_time);
     const durationMs = oldEnd.getTime() - oldStart.getTime();
-    const selDate = new Date(startTime); // current selected date from the form
+    const selDate = new Date(startTime);
     const newStart = new Date(selDate.getFullYear(), selDate.getMonth(), selDate.getDate(),
       oldStart.getHours(), oldStart.getMinutes(), oldStart.getSeconds());
     const newEnd = new Date(newStart.getTime() + durationMs);
     setStartTime(newStart.toISOString());
     setEndTime(newEnd.toISOString());
-
-    // Pre-fill other fields
     setAllDay(s.all_day);
     setColor(s.color);
     setDescription(s.description);
     setNotifications(s.notifications);
     if (s.assigned_to) setAssignedTo(s.assigned_to);
-    if (s.linked_page_id) setLinkedPageId(s.linked_page_id);
-    if (s.linked_recipe_id) setLinkedRecipeId(s.linked_recipe_id);
-    if (s.description) setEditingNote(true);
-
-    // Hide suggestions
+    // Migrate suggestion links
+    const mig = migrateEventLinks({
+      linked_page_id: s.linked_page_id,
+      linked_recipe_id: s.linked_recipe_id,
+      linked_page_ids: s.linked_page_ids,
+      linked_recipe_ids: s.linked_recipe_ids,
+    } as any);
+    setLinkedPageIds(mig.pageIds);
+    setLinkedRecipeIds(mig.recipeIds);
+    if (s.checklist?.length) { setChecklist(s.checklist); setHasChecklist(true); }
+    if (s.description) setHasDescription(true);
     setShowSuggestions(false);
     setSuggestions([]);
   }, [startTime]);
@@ -2295,7 +2303,6 @@ function EventEditorSheet({
   const isFirstRender = useRef(true);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Build current event object from form state
   const buildCurrentEvent = useCallback((): CalendarEvent => {
     return {
       ...event,
@@ -2310,51 +2317,38 @@ function EventEditorSheet({
       notifications,
       notification_enabled: notifications.length > 0,
       assigned_to: assignedTo,
-      linked_page_id: linkedPageId,
-      linked_recipe_id: linkedRecipeId,
+      linked_page_id: linkedPageIds[0] || null,
+      linked_recipe_id: linkedRecipeIds[0] || null,
+      linked_page_ids: linkedPageIds,
+      linked_recipe_ids: linkedRecipeIds,
+      checklist: checklist.length > 0 ? checklist : undefined,
     };
-  }, [event, title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageId, linkedRecipeId]);
+  }, [event, title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageIds, linkedRecipeIds, checklist]);
 
-  // Auto-save for existing events
   const formSnapshot = useMemo(
-    () => JSON.stringify({ title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageId, linkedRecipeId }),
-    [title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageId, linkedRecipeId]
+    () => JSON.stringify({ title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageIds, linkedRecipeIds, checklist }),
+    [title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageIds, linkedRecipeIds, checklist]
   );
 
   useEffect(() => {
     if (isNew) return;
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(() => {
       const ev = buildCurrentEvent();
-      if (ev.title) {
-        onAutoSave(ev);
-      }
+      if (ev.title) onAutoSave(ev);
     }, 400);
-    return () => {
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    };
+    return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
   }, [formSnapshot, isNew, buildCurrentEvent, onAutoSave]);
 
-  // Track initial snapshot to detect dirty state for new events
   const initialSnapshot = useRef(formSnapshot);
-
-  const isDirty = useCallback(() => {
-    return formSnapshot !== initialSnapshot.current;
-  }, [formSnapshot]);
+  const isDirty = useCallback(() => formSnapshot !== initialSnapshot.current, [formSnapshot]);
 
   const handleCloseAttempt = useCallback(() => {
-    if (isNew && isDirty()) {
-      setShowDiscardConfirm(true);
-    } else {
-      onClose();
-    }
+    if (isNew && isDirty()) setShowDiscardConfirm(true);
+    else onClose();
   }, [isNew, isDirty, onClose]);
 
-  // Force-close: reset ALL overlay states, then call parent onClose
   const forceClose = useCallback(() => {
     setShowStartPicker(false);
     setShowEndPicker(false);
@@ -2375,9 +2369,7 @@ function EventEditorSheet({
   };
 
   const addNotification = (minutes: number) => {
-    if (!notifications.includes(minutes)) {
-      setNotifications([...notifications, minutes]);
-    }
+    if (!notifications.includes(minutes)) setNotifications([...notifications, minutes]);
     setShowNotificationPopup(false);
   };
 
@@ -2385,20 +2377,107 @@ function EventEditorSheet({
     setNotifications(notifications.filter((n) => n !== minutes));
   };
 
-  // Find matching label for the current color
   const currentLabel = labels.find((l) => l.color === color);
   const repeatLabel = REPEAT_OPTIONS.find((r) => r.value === repeatRule)?.label || "Keine";
 
   // ── Avatar assignment helpers ───────────────────────────────────
-  const toggleAssigned = (memberId: string) => {
-    setAssignedTo((prev) =>
-      prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId]
-    );
-  };
-
-  // Use real household members from auth context
   const { householdMembers: authHouseholdMembers } = useAuth();
   const householdMembers: HouseholdMember[] = authHouseholdMembers as HouseholdMember[];
+
+  const toggleAssigned = (memberId: string) => {
+    setAssignedTo((prev) => {
+      if (prev.includes(memberId)) {
+        // Don't allow deselecting last member
+        if (prev.length <= 1) return prev;
+        return prev.filter((id) => id !== memberId);
+      }
+      return [...prev, memberId];
+    });
+  };
+
+  // ── Checklist helpers ──────────────────────────────────────────
+  const checklistInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const insertChecklistItemAt = (idx: number) => {
+    const newId = generateId();
+    setChecklist((prev) => {
+      const next = [...prev];
+      next.splice(idx, 0, { id: newId, text: "", checked: false });
+      return next;
+    });
+    setTimeout(() => {
+      checklistInputRefs.current[idx]?.focus();
+    }, 0);
+  };
+
+  const updateChecklistItem = (id: string, updates: Partial<ChecklistItem>) => {
+    setChecklist((prev) => prev.map((item) => item.id === id ? { ...item, ...updates } : item));
+  };
+
+  const removeChecklistItem = (id: string, focusPrevIdx?: number) => {
+    setChecklist((prev) => prev.filter((item) => item.id !== id));
+    if (focusPrevIdx !== undefined && focusPrevIdx >= 0) {
+      setTimeout(() => {
+        const prevInput = checklistInputRefs.current[focusPrevIdx];
+        if (prevInput) {
+          prevInput.focus();
+          const len = prevInput.value.length;
+          prevInput.setSelectionRange(len, len);
+        }
+      }, 0);
+    }
+  };
+
+  const handleChecklistKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, item: ChecklistItem, idx: number) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      insertChecklistItemAt(idx + 1);
+    } else if (e.key === "ArrowUp") {
+      if (idx > 0) {
+        e.preventDefault();
+        const prevInput = checklistInputRefs.current[idx - 1];
+        if (prevInput) {
+          prevInput.focus();
+          const len = prevInput.value.length;
+          prevInput.setSelectionRange(len, len);
+        }
+      }
+    } else if (e.key === "ArrowDown") {
+      if (idx < checklist.length - 1) {
+        e.preventDefault();
+        const nextInput = checklistInputRefs.current[idx + 1];
+        if (nextInput) {
+          nextInput.focus();
+          const len = nextInput.value.length;
+          nextInput.setSelectionRange(len, len);
+        }
+      }
+    } else if (e.key === "Backspace") {
+      const input = e.currentTarget;
+      if (!item.text) {
+        e.preventDefault();
+        removeChecklistItem(item.id, idx - 1);
+      } else if (input.selectionStart === 0 && input.selectionEnd === 0 && idx > 0) {
+        e.preventDefault();
+        const prevItem = checklist[idx - 1];
+        const mergedText = prevItem.text + item.text;
+        const prevLen = prevItem.text.length;
+        setChecklist((prev) => {
+          const next = prev
+            .map((it) => it.id === prevItem.id ? { ...it, text: mergedText } : it)
+            .filter((it) => it.id !== item.id);
+          return next;
+        });
+        setTimeout(() => {
+          const prevInput = checklistInputRefs.current[idx - 1];
+          if (prevInput) {
+            prevInput.focus();
+            prevInput.setSelectionRange(prevLen, prevLen);
+          }
+        }, 0);
+      }
+    }
+  };
 
   // ── Row component ──────────────────────────────────────────────
   const FormRow = ({
@@ -2416,9 +2495,7 @@ function EventEditorSheet({
     return (
       <Tag
         onClick={onClick}
-        className={`w-full flex items-center px-4 py-3 ${
-          noBorder ? "" : ""
-        } ${onClick ? "active:bg-surface-2 transition-colors" : ""}`}
+        className={`w-full flex items-center px-4 py-3 ${onClick ? "active:bg-surface-2 transition-colors" : ""}`}
         style={noBorder ? undefined : { borderBottom: "1px solid var(--zu-border)" }}
       >
         <div className="w-5 h-5 flex items-center justify-center text-text-3 mr-3 flex-shrink-0">
@@ -2448,16 +2525,14 @@ function EventEditorSheet({
         dragConstraints={{ top: 0, bottom: 0 }}
         dragElastic={{ top: 0, bottom: 0.4 }}
         dragSnapToOrigin
-        onDragEnd={(_, info) => {
-          if (info.offset.y > 100) handleCloseAttempt();
-        }}
+        onDragEnd={(_, info) => { if (info.offset.y > 100) handleCloseAttempt(); }}
       >
         {/* Handle bar */}
         <div className="flex-shrink-0 flex justify-center pt-3 pb-1 cursor-grab active:cursor-grabbing">
           <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
         </div>
 
-        {/* Header — different for new vs edit */}
+        {/* Header */}
         {isNew ? (
           <div className="flex items-center justify-end px-4 pb-2 flex-shrink-0">
             <button
@@ -2469,11 +2544,10 @@ function EventEditorSheet({
             </button>
           </div>
         ) : (
-          /* Edit mode: no save button — just the handle bar for swipe-down */
           <div className="h-1" />
         )}
 
-        {/* Title — fixed in header, never scrolls away */}
+        {/* Title */}
         <div className="flex-shrink-0 relative" style={{ borderBottom: "1px solid var(--zu-border)" }}>
           <div className="px-4 py-3">
             <input
@@ -2492,7 +2566,7 @@ function EventEditorSheet({
               onBlur={() => { setTimeout(() => setShowSuggestions(false), 150); }}
               placeholder="Titel hinzufügen"
               className="w-full text-lg text-text-1 placeholder:text-text-3 outline-none bg-transparent"
-              style={{ caretColor: "#F97316" }}
+              style={{ caretColor: "var(--accent)" }}
               autoFocus={isNew}
             />
           </div>
@@ -2501,66 +2575,54 @@ function EventEditorSheet({
           {isNew && showSuggestions && suggestions.length > 0 && (
             <div
               className="absolute left-3 right-3 z-50 rounded-xl overflow-hidden"
-              style={{
-                top: "100%",
-                background: "var(--surface-2)",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
-              }}
+              style={{ top: "100%", background: "var(--surface-2)", boxShadow: "0 4px 12px rgba(0,0,0,0.12)" }}
             >
-                {suggestions.map((s, idx) => {
-                  const oldStart = new Date(s.start_time);
-                  const timeStr = `${String(oldStart.getHours()).padStart(2, "0")}:${String(oldStart.getMinutes()).padStart(2, "0")}`;
-                  return (
-                    <div
-                      key={`${s.title}-${idx}`}
-                      className="flex items-center gap-3 px-3 py-2.5 active:bg-surface transition-colors"
-                      style={idx < suggestions.length - 1 ? { borderBottom: "1px solid var(--zu-border)" } : undefined}
-                      onPointerDown={(e) => { e.preventDefault(); handleSelectSuggestion(s); }}
-                    >
-                      <Clock className="w-4 h-4 text-text-3 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-semibold text-text-1 block truncate">{s.title}</span>
-                        <span className="text-xs text-text-3">{timeStr} Uhr</span>
-                      </div>
-                      <button
-                        className="w-7 h-7 flex items-center justify-center rounded-full text-text-3 flex-shrink-0 active:bg-surface-2"
-                        onPointerDown={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleDismissSuggestion(s.title);
-                        }}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
+              {suggestions.map((s, idx) => {
+                const oldStart = new Date(s.start_time);
+                const timeStr = `${String(oldStart.getHours()).padStart(2, "0")}:${String(oldStart.getMinutes()).padStart(2, "0")}`;
+                return (
+                  <div
+                    key={`${s.title}-${idx}`}
+                    className="flex items-center gap-3 px-3 py-2.5 active:bg-surface transition-colors"
+                    style={idx < suggestions.length - 1 ? { borderBottom: "1px solid var(--zu-border)" } : undefined}
+                    onPointerDown={(e) => { e.preventDefault(); handleSelectSuggestion(s); }}
+                  >
+                    <Clock className="w-4 h-4 text-text-3 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-text-1 block truncate">{s.title}</span>
+                      <span className="text-xs text-text-3">{timeStr} Uhr</span>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    <button
+                      className="w-7 h-7 flex items-center justify-center rounded-full text-text-3 flex-shrink-0 active:bg-surface-2"
+                      onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); handleDismissSuggestion(s.title); }}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Scrollable form rows */}
         <div className="flex-1 min-h-0 overflow-y-auto" style={{ scrollBehavior: "smooth" }}>
-          {/* Ganztägig */}
+          {/* ─── Ganztägig ─── */}
           <FormRow icon={<Clock className="w-5 h-5" />}>
             <span className="flex-1 text-sm text-text-1">Ganztägig</span>
             <button
               onClick={() => setAllDay(!allDay)}
-              className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${
-                allDay ? "bg-accent" : ""
-              }`}
+              className={`w-11 h-6 rounded-full transition-colors relative flex-shrink-0 ${allDay ? "bg-accent" : ""}`}
               style={!allDay ? { background: "var(--switch-background)" } : undefined}
             >
               <div
-                className={`w-5 h-5 rounded-full shadow absolute top-0.5 transition-transform ${
-                  allDay ? "translate-x-[22px]" : "translate-x-0.5"
-                }`}
+                className={`w-5 h-5 rounded-full shadow absolute top-0.5 transition-transform ${allDay ? "translate-x-[22px]" : "translate-x-0.5"}`}
                 style={{ background: "var(--surface)" }}
               />
             </button>
           </FormRow>
 
-          {/* Start */}
+          {/* ─── Start ─── */}
           <FormRow icon={<Calendar className="w-5 h-5" />} onClick={() => setShowStartPicker(true)}>
             <div className="flex-1 text-left">
               <div className="text-xs text-text-3">Start</div>
@@ -2569,7 +2631,7 @@ function EventEditorSheet({
             <ChevronRight className="w-4 h-4 text-text-3 flex-shrink-0" />
           </FormRow>
 
-          {/* Ende */}
+          {/* ─── Ende ─── */}
           <FormRow icon={<Calendar className="w-5 h-5" />} onClick={() => setShowEndPicker(true)}>
             <div className="flex-1 text-left">
               <div className="text-xs text-text-3">Ende</div>
@@ -2578,209 +2640,330 @@ function EventEditorSheet({
             <ChevronRight className="w-4 h-4 text-text-3 flex-shrink-0" />
           </FormRow>
 
-          {/* Label */}
+          {/* ─── Label / Farbe ─── */}
           <FormRow icon={<Palette className="w-5 h-5" />} onClick={() => setShowLabelPopup(true)}>
             <div className="flex items-center gap-2 flex-1">
-              <div
-                className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: currentLabel?.hex || getColorHex(color) }}
-              />
+              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: currentLabel?.hex || getColorHex(color) }} />
               <span className="text-sm text-text-1">{currentLabel?.name || "Kein Label"}</span>
             </div>
             <ChevronRight className="w-4 h-4 text-text-3 flex-shrink-0" />
           </FormRow>
 
-          {/* Zugewiesen an */}
-          <FormRow icon={<Users className="w-5 h-5" />}>
-            <div className="flex items-center gap-2 flex-1">
-              <span className="text-sm text-text-1 mr-1">Zugewiesen</span>
-              <div className="flex items-center gap-1.5">
-                {householdMembers.map((member) => {
-                  const isActive = assignedTo.includes(member.id);
-                  const initial = member.display_name.charAt(0).toUpperCase();
-                  return (
-                    <button
-                      key={member.id}
-                      onClick={() => toggleAssigned(member.id)}
-                      className="relative flex-shrink-0"
-                      type="button"
-                    >
-                      {member.avatar_url ? (
-                        <img
-                          src={member.avatar_url}
-                          alt={member.display_name}
-                          className={`w-8 h-8 rounded-full object-cover transition ${
-                            isActive ? "" : "opacity-40"
-                          }`}
-                        />
-                      ) : (
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white transition ${
-                            isActive ? "" : "opacity-40"
-                          }`}
-                          style={{ backgroundColor: member.initials_color }}
-                        >
-                          {initial}
-                        </div>
-                      )}
-                      {/* Orange checkmark badge — same style as Einkaufen store item-count badge */}
-                      {isActive && (
-                        <div className="absolute -bottom-0.5 -right-0.5 bg-accent rounded-full w-[16px] h-[16px] flex items-center justify-center ring-2 ring-surface">
-                          <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
-                        </div>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </FormRow>
-
-          {/* Wiederholung */}
-          <FormRow icon={<Repeat className="w-5 h-5" />} onClick={() => setShowRepeatPopup(true)}>
-            {repeatRule === "none" ? (
+          {/* ─── Benachrichtigungs-Block ─── */}
+          {notifications.length === 0 ? (
+            /* No notifications yet — just show add link */
+            <FormRow icon={<Bell className="w-5 h-5" />} onClick={() => setShowNotificationPopup(true)}>
               <span className="flex-1 text-sm text-left" style={{ color: "var(--text-3)" }}>
-                Wiederholung hinzufügen
+                Benachrichtigung hinzufügen
               </span>
-            ) : (
-              <div className="flex items-center flex-1 min-w-0">
-                <span className="flex-1 text-sm text-left" style={{ color: "var(--text-1)" }}>
-                  {repeatLabel}
-                </span>
-                <ChevronRight className="w-4 h-4 text-text-3 flex-shrink-0" />
-              </div>
-            )}
-          </FormRow>
-
-          {/* Existing notifications */}
-          {notifications.map((n) => (
-            <FormRow key={n} icon={<Bell className="w-5 h-5" />} noBorder>
-              <span className="flex-1 text-sm" style={{ color: "var(--text-1)" }}>{formatNotification(n)}</span>
-              <button
-                onClick={() => removeNotification(n)}
-                className="text-text-3 hover:text-text-1 transition flex-shrink-0 p-1"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </FormRow>
-          ))}
-
-          {/* Add notification — placeholder always visible */}
-          <FormRow icon={notifications.length === 0 ? <Bell className="w-5 h-5" /> : <div className="w-5 h-5" />} onClick={() => setShowNotificationPopup(true)}>
-            <span className="flex-1 text-sm text-left" style={{ color: "var(--text-3)" }}>
-              Benachrichtigung hinzufügen
-            </span>
-          </FormRow>
-
-          {/* Beschreibung */}
-          {editingNote ? (
-            <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--zu-border)" }}>
-              <div className="flex items-start">
-                <div className="w-5 h-5 flex items-center justify-center text-text-3 mr-3 flex-shrink-0 mt-0.5">
-                  <PenLine className="w-5 h-5" />
+          ) : (
+            /* Has notifications — show chips, add link, and avatar selection */
+            <div style={{ borderBottom: "1px solid var(--zu-border)" }}>
+              {/* Notification chips */}
+              <div className="px-4 pt-3 pb-1">
+                <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                  <Bell className="w-4 h-4 text-text-3 flex-shrink-0 mr-1" />
+                  {notifications.map((n) => (
+                    <span
+                      key={n}
+                      className="inline-flex items-center gap-1 text-xs font-medium rounded-full px-2.5 py-1"
+                      style={{ background: "var(--surface-2)", color: "var(--text-1)" }}
+                    >
+                      {formatNotification(n)}
+                      <button
+                        onClick={() => removeNotification(n)}
+                        className="w-4 h-4 flex items-center justify-center text-text-3 hover:text-text-1 flex-shrink-0"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
                 </div>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Beschreibung hinzufügen..."
-                  rows={3}
-                  autoComplete="off"
-                  autoCapitalize="sentences"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-form-type="other"
-                  className="flex-1 text-sm text-text-1 placeholder:text-text-3 outline-none bg-transparent resize-none"
-                  autoFocus
-                />
+                {/* Add more link */}
+                <button
+                  onClick={() => setShowNotificationPopup(true)}
+                  className="text-xs font-medium mb-2 active:opacity-70"
+                  style={{ color: "var(--color-accent)" }}
+                >
+                  + Benachrichtigung hinzufügen
+                </button>
+              </div>
+
+              {/* Avatar assignment — only visible when notifications exist */}
+              <div className="px-4 pb-3 flex items-center gap-2">
+                <span className="text-xs text-text-3 mr-1">An:</span>
+                <div className="flex items-center gap-1.5">
+                  {householdMembers.map((member) => {
+                    const isActive = assignedTo.includes(member.id);
+                    const initial = member.display_name.charAt(0).toUpperCase();
+                    return (
+                      <button
+                        key={member.id}
+                        onClick={() => toggleAssigned(member.id)}
+                        className="relative flex-shrink-0"
+                        type="button"
+                      >
+                        {member.avatar_url ? (
+                          <img
+                            src={member.avatar_url}
+                            alt={member.display_name}
+                            className={`w-8 h-8 rounded-full object-cover transition ${isActive ? "" : "opacity-40"}`}
+                          />
+                        ) : (
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white transition ${isActive ? "" : "opacity-40"}`}
+                            style={{ backgroundColor: member.initials_color }}
+                          >
+                            {initial}
+                          </div>
+                        )}
+                        {isActive && (
+                          <div className="absolute -bottom-0.5 -right-0.5 bg-accent rounded-full w-[16px] h-[16px] flex items-center justify-center ring-2 ring-surface">
+                            <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          ) : (
-            <FormRow icon={<PenLine className="w-5 h-5" />} onClick={() => setEditingNote(true)}>
-              <span className="flex-1 text-sm text-left" style={{ color: description ? "var(--text-1)" : "var(--text-3)" }}>
-                {description || "Beschreibung hinzufügen"}
-              </span>
-            </FormRow>
           )}
 
-          {/* Rezept-Verknüpfung — split: left navigates, right opens picker */}
-          <div className="w-full flex items-center" style={{ borderBottom: "1px solid var(--zu-border)" }}>
-            <button
-              className="flex items-center flex-1 min-w-0 px-4 py-3 active:bg-surface-2 transition-colors"
-              onClick={() => linkedRecipe && linkedRecipeId ? onNavigate?.("kochen", linkedRecipeId) : setShowRecipePickerDrawer(true)}
-            >
-              <div className="w-5 h-5 flex items-center justify-center text-text-3 mr-3 flex-shrink-0">
-                <CookingPot size={20} weight="regular" />
-              </div>
-              <div className="flex-1 min-w-0 flex items-center">
-                {linkedRecipe ? (
-                  <span
-                    className="inline-flex items-center gap-1 truncate"
-                    style={{
-                      background: "var(--surface-2)",
-                      borderRadius: 999,
-                      padding: "4px 10px",
-                      fontSize: 13,
-                      color: "var(--text-1)",
-                    }}
-                  >
-                    🍳 {linkedRecipe.title}
-                  </span>
-                ) : (
-                  <span className="flex-1 text-sm text-left" style={{ color: "var(--text-3)" }}>
-                    Rezept hinzufügen
-                  </span>
-                )}
-              </div>
-            </button>
-            <button
-              className="flex items-center justify-center flex-shrink-0 py-3 active:bg-surface-2 transition-colors"
-              style={{ padding: "0 16px", minWidth: 44, minHeight: 44 }}
-              onClick={() => setShowRecipePickerDrawer(true)}
-            >
-              <ChevronRight className="w-4 h-4 text-text-3" />
-            </button>
-          </div>
+          {/* ─── Aktive Anhänge Section ─── */}
+          {(hasDescription || hasChecklist || linkedPageIds.length > 0 || linkedRecipeIds.length > 0 || repeatRule !== "none") && (
+            <div className="contents">
+              {/* Beschreibung */}
+              {hasDescription && (
+                <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--zu-border)" }}>
+                  <div className="flex items-start">
+                    <div className="w-5 h-5 flex items-center justify-center text-text-3 mr-3 flex-shrink-0 mt-0.5">
+                      <AlignLeft className="w-5 h-5" />
+                    </div>
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      onInput={(e) => {
+                        const el = e.currentTarget;
+                        el.style.height = "auto";
+                        el.style.height = el.scrollHeight + "px";
+                      }}
+                      placeholder="Beschreibung..."
+                      rows={1}
+                      autoComplete="off"
+                      autoCapitalize="sentences"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
+                      className="flex-1 text-sm text-text-1 placeholder:text-text-3 placeholder:text-[14px] placeholder:opacity-100 outline-none bg-transparent resize-none"
+                      style={{ caretColor: "var(--color-accent)", overflowY: "hidden" }}
+                    />
+                    <button
+                      onClick={() => { setHasDescription(false); setDescription(""); }}
+                      className="w-6 h-6 flex items-center justify-center text-text-3 hover:text-text-1 flex-shrink-0 mt-0.5"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
-          {/* Notiz-Verknüpfung — split: left navigates, right opens picker */}
-          <div className="w-full flex items-center" style={{ borderBottom: "1px solid var(--zu-border)" }}>
-            <button
-              className="flex items-center flex-1 min-w-0 px-4 py-3 active:bg-surface-2 transition-colors"
-              onClick={() => linkedPage && linkedPageId ? onNavigate?.("listen", linkedPageId) : setShowNotePickerDrawer(true)}
-            >
-              <div className="w-5 h-5 flex items-center justify-center text-text-3 mr-3 flex-shrink-0">
-                <Notepad size={20} weight="regular" />
-              </div>
-              <div className="flex-1 min-w-0 flex items-center">
-                {linkedPage ? (
-                  <span
-                    className="inline-flex items-center gap-1 truncate"
-                    style={{
-                      background: "var(--surface-2)",
-                      borderRadius: 999,
-                      padding: "4px 10px",
-                      fontSize: 13,
-                      color: "var(--text-1)",
-                    }}
-                  >
-                    {linkedPage.icon || "📄"} {linkedPage.title || "Ohne Titel"}
-                  </span>
-                ) : (
-                  <span className="flex-1 text-sm text-left" style={{ color: "var(--text-3)" }}>
-                    Notiz hinzufügen
-                  </span>
-                )}
-              </div>
-            </button>
-            <button
-              className="flex items-center justify-center flex-shrink-0 py-3 active:bg-surface-2 transition-colors"
-              style={{ padding: "0 16px", minWidth: 44, minHeight: 44 }}
-              onClick={() => setShowNotePickerDrawer(true)}
-            >
-              <ChevronRight className="w-4 h-4 text-text-3" />
-            </button>
-          </div>
+              {/* Checkliste */}
+              {hasChecklist && (
+                <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--zu-border)" }}>
+                  <div className="flex items-start">
+                    <div className="w-5 h-5 flex items-center justify-center text-text-3 mr-3 flex-shrink-0 mt-0.5">
+                      <CheckSquare className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {checklist.map((item, idx) => (
+                        <div key={item.id} className="flex items-center gap-2 py-1">
+                          <button
+                            onClick={() => updateChecklistItem(item.id, { checked: !item.checked })}
+                            className={`w-4 h-4 rounded-[3px] border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                              item.checked ? "bg-accent border-accent" : ""
+                            }`}
+                            style={!item.checked ? { borderColor: "#d1d5db" } : undefined}
+                          >
+                            {item.checked && (
+                              <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+                                <path d="M1 3L3 5L7 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                              </svg>
+                            )}
+                          </button>
+                          <input
+                            ref={(el) => { checklistInputRefs.current[idx] = el; }}
+                            type="search"
+                            name={`checklist-item-${idx}`}
+                            value={item.text}
+                            onChange={(e) => updateChecklistItem(item.id, { text: e.target.value })}
+                            onKeyDown={(e) => handleChecklistKeyDown(e, item, idx)}
+                            placeholder="Eintrag..."
+                            autoComplete="off"
+                            autoCapitalize="sentences"
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            data-form-type="other"
+                            className={`flex-1 text-sm outline-none bg-transparent min-w-0 placeholder:text-text-3 placeholder:text-[14px] placeholder:opacity-100 ${item.checked ? "line-through text-text-3" : "text-text-1"}`}
+                            style={{ caretColor: "var(--color-accent)" }}
+                            autoFocus={checklist.length === 1 && !item.text}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => { setHasChecklist(false); setChecklist([]); }}
+                      className="w-6 h-6 flex items-center justify-center text-text-3 hover:text-text-1 flex-shrink-0 mt-0.5"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
-          {/* Delete — only for existing events */}
+              {/* Notiz-Chips */}
+              {linkedPageIds.length > 0 && (
+                <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--zu-border)" }}>
+                  <div className="flex items-center flex-wrap gap-1.5">
+                    <Notepad size={18} weight="regular" className="text-text-3 flex-shrink-0 mr-1" />
+                    {linkedPageIds.map((pageId) => {
+                      const page = availablePages.find((p) => p.id === pageId);
+                      return (
+                        <span
+                          key={pageId}
+                          className="inline-flex items-center gap-1 text-xs font-medium rounded-full px-2.5 py-1 cursor-pointer active:opacity-70"
+                          style={{ background: "var(--surface-2)", color: "var(--text-1)" }}
+                          onClick={() => page ? onNavigate?.("listen", pageId) : undefined}
+                        >
+                          {page?.icon || "📄"} {page?.title || "Notiz"}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setLinkedPageIds((prev) => prev.filter((id) => id !== pageId)); }}
+                            className="w-4 h-4 flex items-center justify-center text-text-3 hover:text-text-1 flex-shrink-0"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Rezept-Chips */}
+              {linkedRecipeIds.length > 0 && (
+                <div className="px-4 py-2.5" style={{ borderBottom: "1px solid var(--zu-border)" }}>
+                  <div className="flex items-center flex-wrap gap-1.5">
+                    <CookingPot size={18} weight="regular" className="text-text-3 flex-shrink-0 mr-1" />
+                    {linkedRecipeIds.map((recipeId) => {
+                      const recipe = availableRecipes.find((r) => r.id === recipeId);
+                      return (
+                        <span
+                          key={recipeId}
+                          className="inline-flex items-center gap-1 text-xs font-medium rounded-full px-2.5 py-1 cursor-pointer active:opacity-70"
+                          style={{ background: "var(--surface-2)", color: "var(--text-1)" }}
+                          onClick={() => recipe ? onNavigate?.("kochen", recipeId) : undefined}
+                        >
+                          🍳 {recipe?.title || "Rezept"}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setLinkedRecipeIds((prev) => prev.filter((id) => id !== recipeId)); }}
+                            className="w-4 h-4 flex items-center justify-center text-text-3 hover:text-text-1 flex-shrink-0"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Wiederholungs-Info als lesbarer Text */}
+              {repeatRule !== "none" && (
+                <FormRow icon={<Repeat className="w-5 h-5" />}>
+                  <span className="flex-1 text-sm text-left" style={{ color: "var(--text-1)" }}>
+                    {repeatLabel}
+                  </span>
+                  <button
+                    onClick={() => setRepeatRule("none")}
+                    className="w-6 h-6 flex items-center justify-center text-text-3 hover:text-text-1 flex-shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </FormRow>
+              )}
+            </div>
+          )}
+
+          {/* ─── "Mehr" Expander — nur Aktions-Links ─── */}
+          {(() => {
+            const allSet = hasDescription && hasChecklist && repeatRule !== "none";
+            const moreLabel = allSet ? "Mehr · Notiz, Rezept" : "Mehr";
+            return (
+              <button
+                onClick={() => setShowMoreSection(!showMoreSection)}
+                className="w-full flex items-center px-4 py-3 active:bg-surface-2 transition-colors"
+                style={{ borderBottom: showMoreSection ? "1px solid var(--zu-border)" : undefined }}
+              >
+                <ChevronDown
+                  className={`w-4 h-4 text-text-3 mr-3 transition-transform ${showMoreSection ? "rotate-180" : ""}`}
+                />
+                <span className="flex-1 text-sm text-left" style={{ color: "var(--text-3)" }}>
+                  {moreLabel}
+                </span>
+              </button>
+            );
+          })()}
+
+          {showMoreSection && (
+            <div className="px-4 py-2" style={{ borderBottom: "1px solid var(--zu-border)" }}>
+              <div className="flex flex-col gap-0.5">
+                {!hasDescription && (
+                  <button
+                    onClick={() => setHasDescription(true)}
+                    className="flex items-center gap-2.5 py-2 active:opacity-70 transition"
+                  >
+                    <AlignLeft className="w-4 h-4 text-text-3" />
+                    <span className="text-sm" style={{ color: "var(--text-3)" }}>Beschreibung hinzufügen</span>
+                  </button>
+                )}
+                {!hasChecklist && (
+                  <button
+                    onClick={() => { setHasChecklist(true); insertChecklistItemAt(0); }}
+                    className="flex items-center gap-2.5 py-2 active:opacity-70 transition"
+                  >
+                    <CheckSquare className="w-4 h-4 text-text-3" />
+                    <span className="text-sm" style={{ color: "var(--text-3)" }}>Checkliste hinzufügen</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowNotePickerDrawer(true)}
+                  className="flex items-center gap-2.5 py-2 active:opacity-70 transition"
+                >
+                  <Notepad size={16} weight="regular" className="text-text-3" />
+                  <span className="text-sm" style={{ color: "var(--text-3)" }}>Notiz verlinken</span>
+                </button>
+                <button
+                  onClick={() => setShowRecipePickerDrawer(true)}
+                  className="flex items-center gap-2.5 py-2 active:opacity-70 transition"
+                >
+                  <CookingPot size={16} weight="regular" className="text-text-3" />
+                  <span className="text-sm" style={{ color: "var(--text-3)" }}>Rezept verlinken</span>
+                </button>
+                <button
+                  onClick={() => setShowRepeatPopup(true)}
+                  className="flex items-center gap-2.5 py-2 active:opacity-70 transition"
+                >
+                  <Repeat className="w-4 h-4 text-text-3" />
+                  <span className="text-sm" style={{ color: "var(--text-3)" }}>
+                    {repeatRule === "none" ? "Wiederholung hinzufügen" : "Wiederholung ändern"}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Delete */}
           {onDelete && (
             <div className="px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
               <button
@@ -2827,16 +3010,10 @@ function EventEditorSheet({
             {labels.map((label) => (
               <button
                 key={label.id}
-                onClick={() => {
-                  setColor(label.color);
-                  setShowLabelPopup(false);
-                }}
+                onClick={() => { setColor(label.color); setShowLabelPopup(false); }}
                 className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
               >
-                <div
-                  className="w-4 h-4 rounded-full mr-3 flex-shrink-0"
-                  style={{ backgroundColor: label.hex }}
-                />
+                <div className="w-4 h-4 rounded-full mr-3 flex-shrink-0" style={{ backgroundColor: label.hex }} />
                 <span className="flex-1 text-sm text-text-1 text-left">{label.name}</span>
                 {label.color === color && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
               </button>
@@ -2852,13 +3029,9 @@ function EventEditorSheet({
       <AnimatePresence>
         {showRepeatPopup && (
           <PopupSheet onClose={() => setShowRepeatPopup(false)}>
-            {/* "Keine Wiederholung" as first option to remove */}
             {repeatRule !== "none" && (
               <button
-                onClick={() => {
-                  setRepeatRule("none");
-                  setShowRepeatPopup(false);
-                }}
+                onClick={() => { setRepeatRule("none"); setShowRepeatPopup(false); }}
                 className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
                 style={{ borderBottom: "1px solid var(--zu-border)" }}
               >
@@ -2868,16 +3041,11 @@ function EventEditorSheet({
             {REPEAT_OPTIONS.filter((opt) => opt.value !== "none").map((opt) => (
               <button
                 key={opt.value}
-                onClick={() => {
-                  setRepeatRule(opt.value);
-                  setShowRepeatPopup(false);
-                }}
+                onClick={() => { setRepeatRule(opt.value); setShowRepeatPopup(false); }}
                 className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
               >
                 <span className="flex-1 text-sm text-text-1 text-left">{opt.label}</span>
-                {repeatRule === opt.value && (
-                  <Check className="w-4 h-4 text-accent flex-shrink-0" />
-                )}
+                {repeatRule === opt.value && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
               </button>
             ))}
           </PopupSheet>
@@ -2895,16 +3063,11 @@ function EventEditorSheet({
                 className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
               >
                 <span className="flex-1 text-sm text-text-1 text-left">{opt.label}</span>
-                {notifications.includes(opt.value) && (
-                  <Check className="w-4 h-4 text-accent flex-shrink-0" />
-                )}
+                {notifications.includes(opt.value) && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
               </button>
             ))}
             <button
-              onClick={() => {
-                setShowNotificationPopup(false);
-                setTimeout(() => setShowCustomNotification(true), 200);
-              }}
+              onClick={() => { setShowNotificationPopup(false); setTimeout(() => setShowCustomNotification(true), 200); }}
               className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
             >
               <span className="flex-1 text-sm text-text-1 text-left">Benutzerdefiniert...</span>
@@ -2916,10 +3079,7 @@ function EventEditorSheet({
       <AnimatePresence>
         {showCustomNotification && (
           <CustomNotificationSheet
-            onSelect={(minutes) => {
-              addNotification(minutes);
-              setShowCustomNotification(false);
-            }}
+            onSelect={(minutes) => { addNotification(minutes); setShowCustomNotification(false); }}
             onClose={() => setShowCustomNotification(false)}
           />
         )}
@@ -2930,9 +3090,9 @@ function EventEditorSheet({
         {showRecipePickerDrawer && (
           <RecipePickerDrawer
             recipes={availableRecipes}
-            selectedRecipeId={linkedRecipeId}
+            alreadyLinkedIds={linkedRecipeIds}
             onSelect={(recipeId) => {
-              setLinkedRecipeId(recipeId);
+              setLinkedRecipeIds((prev) => [...prev, recipeId]);
               setShowRecipePickerDrawer(false);
             }}
             onClose={() => setShowRecipePickerDrawer(false)}
@@ -2945,9 +3105,9 @@ function EventEditorSheet({
         {showNotePickerDrawer && (
           <NotePickerDrawer
             pages={availablePages}
-            selectedPageId={linkedPageId}
+            alreadyLinkedIds={linkedPageIds}
             onSelect={(pageId) => {
-              setLinkedPageId(pageId);
+              setLinkedPageIds((prev) => [...prev, pageId]);
               setShowNotePickerDrawer(false);
             }}
             onClose={() => setShowNotePickerDrawer(false)}
@@ -2960,10 +3120,7 @@ function EventEditorSheet({
         {showDeleteConfirm && onDelete && (
           <DeleteConfirmModal
             isRecurring={event.repeat_rule !== "none"}
-            onDeleteAll={() => {
-              setShowDeleteConfirm(false);
-              onDelete("all");
-            }}
+            onDeleteAll={() => { setShowDeleteConfirm(false); onDelete("all"); }}
             onDeleteSingle={event.repeat_rule !== "none" ? () => {
               setShowDeleteConfirm(false);
               const dateKey = (event as any)._singleEditDate || contextDateKey;

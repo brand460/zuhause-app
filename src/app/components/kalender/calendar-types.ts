@@ -19,12 +19,21 @@ export interface CalendarEvent {
   notifications?: number[]; // array of notification values in minutes
   notification_enabled?: boolean; // true when push notifications should be sent
   assigned_to?: string[]; // array of household member IDs
-  linked_recipe_id: string | null;
+  linked_recipe_id: string | null; // legacy single ID — kept for backward compat
   linked_list_id: string | null;
-  linked_page_id: string | null;
+  linked_page_id: string | null; // legacy single ID — kept for backward compat
+  linked_page_ids?: string[]; // array of linked page IDs
+  linked_recipe_ids?: string[]; // array of linked recipe IDs
+  checklist?: ChecklistItem[]; // inline checklist items
   // For single-occurrence edits of recurring events
   recurring_exception_dates?: string[]; // ISO date strings where this event is modified
   recurring_edits?: Record<string, Partial<CalendarEvent>>; // date -> overrides
+}
+
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  checked: boolean;
 }
 
 export const EVENT_COLORS: { id: EventColor; label: string; hex: string; bg: string }[] = [
