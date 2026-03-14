@@ -40,6 +40,7 @@ import {
 } from "./calendar-types";
 import { useAuth } from "../auth-context";
 import { useKeyboardOffset } from "../ui/use-keyboard-offset";
+import { type Holiday, getHolidaysForYears } from "./german-holidays";
 
 // ── Constants & Helpers ────────────────────────────────────────────
 
@@ -300,9 +301,10 @@ interface MonthGridProps {
   today: Date;
   isDark: boolean;
   onDayClick: (date: Date) => void;
+  holidayMap: Map<string, Holiday[]>;
 }
 
-const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightMonth, today, isDark, onDayClick }: MonthGridProps) {
+const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightMonth, today, isDark, onDayClick, holidayMap }: MonthGridProps) {
   const { weeks, weekBands, cellSingleEvents, cellAllEvents } = data;
   return (
     // height: 100% fills the track panel height set by the outer grid container
@@ -378,6 +380,7 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
               const hiddenEvents = allEvents.filter((ev) => !visibleIds.has(ev.id));
               const hiddenCount = hiddenEvents.length;
               const hiddenColors = [...new Set(hiddenEvents.map((ev) => ev.color))];
+              const cellHoliday = inMonth ? (holidayMap.get(key)?.[0] ?? null) : null;
               return (
                 <button
                   key={colIdx}
@@ -407,6 +410,14 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
                   >
                     {date.getDate()}
                   </div>
+                  {cellHoliday && (
+                    <span
+                      className="text-[8px] leading-none w-full text-center truncate px-0.5 relative z-10"
+                      style={{ color: "var(--text-3)", pointerEvents: "none", marginTop: 1 }}
+                    >
+                      {cellHoliday.shortName}
+                    </span>
+                  )}
                   {visibleSingle.length > 0 && (
                     <div className="w-full flex flex-col gap-px absolute left-0 right-0" style={{ top: DAY_NUM_HEIGHT + bandAreaHeight }}>
                       {visibleSingle.map((ev) => {
@@ -824,6 +835,16 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
 
   const selectedDayEvents = useMemo(() => getEventsForDate(events, selectedDate), [events, selectedDate]);
 
+  // ── German public holidays (local, never saved to Supabase) ─────
+  const holidayMap = useMemo(() => {
+    const years = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1, currentYear + 2];
+    return getHolidaysForYears(years);
+  }, [currentYear]);
+
+  const selectedDayHolidays = useMemo(() => {
+    return holidayMap.get(toDateKey(selectedDate)) ?? [];
+  }, [holidayMap, selectedDate]);
+
   const [prevYear, prevMonth] = useMemo<[number, number]>(
     () => (currentMonth === 0 ? [currentYear - 1, 11] : [currentYear, currentMonth - 1]),
     [currentYear, currentMonth]
@@ -981,6 +1002,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
               today={today}
               isDark={isDark}
               onDayClick={handleDayClick}
+              holidayMap={holidayMap}
             />
             <MonthGrid
               data={curData}
@@ -989,6 +1011,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
               today={today}
               isDark={isDark}
               onDayClick={handleDayClick}
+              holidayMap={holidayMap}
             />
             <MonthGrid
               data={nextData}
@@ -997,6 +1020,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
               today={today}
               isDark={isDark}
               onDayClick={handleDayClick}
+              holidayMap={holidayMap}
             />
           </div>
         </div>
@@ -1038,12 +1062,45 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
           className="flex-1 min-h-0 overflow-y-auto px-[16px] pt-[0px] pb-[16px]"
           style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
         >
-          {selectedDayEvents.length === 0 ? (
+          {selectedDayEvents.length === 0 && selectedDayHolidays.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-text-3">
               <p className="text-sm">Keine Termine</p>
             </div>
           ) : (
             <div className="space-y-2">
+              {/* ── Feiertage (nicht editierbar) ──────────────────── */}
+              {selectedDayHolidays.map((holiday) => (
+                <div
+                  key={holiday.id}
+                  className="w-full flex items-stretch bg-surface rounded-xl overflow-hidden"
+                  style={{ boxShadow: "var(--shadow-card)" }}
+                >
+                  {/* Kein farbiger Balken — nur neutraler Abstandshalter */}
+                  <div className="w-1.5 flex-shrink-0" style={{ backgroundColor: "var(--surface-2)" }} />
+                  <div className="flex-1 flex items-center gap-3 px-3 py-2.5 min-w-0">
+                    <div className="flex-shrink-0 text-xs w-12 text-right" style={{ color: "var(--text-3)" }}>
+                      <span className="font-medium">Feiertag</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-sm truncate text-left"
+                        style={{ color: "var(--text-3)", fontWeight: 500 }}
+                      >
+                        {holiday.name}
+                      </p>
+                    </div>
+                    {holiday.regional && (
+                      <span
+                        className="text-[10px] flex-shrink-0 opacity-60 hidden"
+                        style={{ color: "var(--text-3)" }}
+                      >
+                        {holiday.states?.join("·")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {/* ── Reguläre Events ───────────────────────────────── */}
               {selectedDayEvents.map((ev) => {
                 const hasAssigned = ev.assigned_to && ev.assigned_to.length > 0;
                 const hasNote = !!ev.description;
@@ -2756,8 +2813,8 @@ function EventEditorSheet({
                       data-lpignore="true"
                       data-1p-ignore="true"
                       data-form-type="other"
-                      className="flex-1 text-sm text-text-1 placeholder:text-text-3 placeholder:text-[14px] placeholder:opacity-100 outline-none bg-transparent resize-none"
-                      style={{ caretColor: "var(--color-accent)", overflowY: "hidden" }}
+                      className="flex-1 text-text-1 placeholder:text-text-3 placeholder:font-medium placeholder:opacity-100 outline-none bg-transparent resize-none"
+                      style={{ caretColor: "var(--color-accent)", overflowY: "hidden", transform: "scale(0.875)", transformOrigin: "0% 0%" }}
                     />
                     <button
                       onClick={() => { setHasDescription(false); setDescription(""); }}
@@ -2805,8 +2862,8 @@ function EventEditorSheet({
                             data-lpignore="true"
                             data-1p-ignore="true"
                             data-form-type="other"
-                            className={`flex-1 text-sm outline-none bg-transparent min-w-0 placeholder:text-text-3 placeholder:text-[14px] placeholder:opacity-100 ${item.checked ? "line-through text-text-3" : "text-text-1"}`}
-                            style={{ caretColor: "var(--color-accent)" }}
+                            className={`flex-1 outline-none bg-transparent min-w-0 placeholder:text-text-3 placeholder:font-medium placeholder:opacity-100 ${item.checked ? "line-through text-text-3" : "text-text-1"}`}
+                            style={{ caretColor: "var(--color-accent)", transform: "scale(0.875)", transformOrigin: "0% 50%" }}
                             autoFocus={checklist.length === 1 && !item.text}
                           />
                         </div>
@@ -2918,6 +2975,15 @@ function EventEditorSheet({
           {showMoreSection && (
             <div className="px-4 py-2" style={{ borderBottom: "1px solid var(--zu-border)" }}>
               <div className="flex flex-col gap-0.5">
+                <button
+                  onClick={() => setShowRepeatPopup(true)}
+                  className="flex items-center gap-2.5 py-2 active:opacity-70 transition"
+                >
+                  <Repeat className="w-4 h-4 text-text-3" />
+                  <span className="text-sm" style={{ color: "var(--text-3)" }}>
+                    {repeatRule === "none" ? "Wiederholung hinzufügen" : "Wiederholung ändern"}
+                  </span>
+                </button>
                 {!hasDescription && (
                   <button
                     onClick={() => setHasDescription(true)}
@@ -2949,15 +3015,6 @@ function EventEditorSheet({
                 >
                   <CookingPot size={16} weight="regular" className="text-text-3" />
                   <span className="text-sm" style={{ color: "var(--text-3)" }}>Rezept verlinken</span>
-                </button>
-                <button
-                  onClick={() => setShowRepeatPopup(true)}
-                  className="flex items-center gap-2.5 py-2 active:opacity-70 transition"
-                >
-                  <Repeat className="w-4 h-4 text-text-3" />
-                  <span className="text-sm" style={{ color: "var(--text-3)" }}>
-                    {repeatRule === "none" ? "Wiederholung hinzufügen" : "Wiederholung ändern"}
-                  </span>
                 </button>
               </div>
             </div>

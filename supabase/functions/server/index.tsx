@@ -882,6 +882,92 @@ app.post("/make-server-2a26506b/backfill-profiles", async (c) => {
 
 // ── Recipe URL import via Claude API ──────────────────────────────
 
+// ── Scan shopping list image via Claude Vision API ────────────────
+
+app.post("/make-server-2a26506b/scan-shopping-list", async (c) => {
+  try {
+    const { image_base64, media_type, anthropic_api_key } = await c.req.json();
+    if (!image_base64) {
+      return c.json({ error: "Kein Bild übermittelt." }, 400);
+    }
+    const apiKey = anthropic_api_key;
+    if (!apiKey) {
+      return c.json({ error: "ANTHROPIC_API_KEY wurde nicht übergeben. Bitte in Vercel unter Environment Variables als VITE_ANTHROPIC_API_KEY hinterlegen." }, 400);
+    }
+
+    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 2048,
+        system: `Du bist ein Assistent der handgeschriebene Einkaufslisten erkennt. 
+Antworte NUR mit einem JSON-Array, kein weiterer Text, keine Markdown-Backticks.
+Format: [{"name": "Artikelname", "quantity": 1}]
+Bereinige Rechtschreibfehler, normalisiere Groß-/Kleinschreibung (ersten Buchstaben groß).
+Ignoriere durchgestrichene oder unleserliche Einträge.
+Extrahiere Mengenangaben wenn vorhanden (z.B. "3x Äpfel" → quantity: 3).`,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: media_type || "image/jpeg",
+                  data: image_base64,
+                },
+              },
+              {
+                type: "text",
+                text: "Bitte erkenne alle Artikel auf dieser Einkaufsliste.",
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!claudeRes.ok) {
+      const errText = await claudeRes.text();
+      console.log("Claude Vision API error:", errText);
+      return c.json({ error: `Claude API Fehler: ${claudeRes.status} ${errText.substring(0, 200)}` }, 500);
+    }
+
+    const claudeData = await claudeRes.json();
+    const text = claudeData?.content?.[0]?.text || "";
+
+    let items: any[];
+    try {
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      items = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(text);
+    } catch (parseErr) {
+      console.log("Claude Vision response parse error:", parseErr, "Text:", text.substring(0, 500));
+      return c.json({ error: `Fehler beim Parsen der Antwort: ${parseErr}` }, 500);
+    }
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return c.json({ items: [] });
+    }
+
+    // Normalize items
+    const normalized = items.map((item: any) => ({
+      name: typeof item.name === "string" ? item.name.trim() : String(item.name || ""),
+      quantity: typeof item.quantity === "number" && item.quantity > 0 ? item.quantity : 1,
+    })).filter((item: any) => item.name.length > 0);
+
+    return c.json({ items: normalized });
+  } catch (err) {
+    console.log("POST /scan-shopping-list error:", err);
+    return c.json({ error: `Fehler beim Scannen der Einkaufsliste: ${err}` }, 500);
+  }
+});
+
 app.post("/make-server-2a26506b/import-recipe", async (c) => {
   try {
     const { url, anthropic_api_key } = await c.req.json();

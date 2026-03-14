@@ -22,6 +22,8 @@ import {
   ArrowUp,
   Settings,
   ShoppingBag,
+  Camera,
+  Loader2,
 } from "lucide-react";
 import {
   DndContext,
@@ -61,7 +63,7 @@ import {
   GROCERY_DATABASE,
   getAllCategories,
 } from "./shopping-data";
-import { API_BASE } from "../supabase-client";
+import { API_BASE, apiFetch } from "../supabase-client";
 import { publicAnonKey } from "/utils/supabase/info";
 import {
   useKvRealtime,
@@ -70,6 +72,7 @@ import {
 import { useBackHandler } from "../ui/use-back-handler";
 import { useAuth } from "../auth-context";
 import { useKeyboardOffset } from "../ui/use-keyboard-offset";
+import { toast } from "sonner";
 const bagEmptyImg = '/images/bag-empty.png';
 const bagFullImg = '/images/bag-full.png';
 
@@ -2122,6 +2125,166 @@ function CheckedSection({
   );
 }
 
+// ── Scan Preview Sheet ─────────────────────────────────────────────
+interface ScannedItem {
+  name: string;
+  quantity: number;
+  category: string;
+  checked: boolean;
+}
+
+function ScanPreviewSheet({
+  items,
+  onClose,
+  onAdd,
+}: {
+  items: ScannedItem[];
+  onClose: () => void;
+  onAdd: (items: ScannedItem[]) => void;
+}) {
+  const [scannedItems, setScannedItems] = useState<ScannedItem[]>(items);
+
+  const toggleItem = (idx: number) => {
+    setScannedItems((prev) =>
+      prev.map((item, i) =>
+        i === idx ? { ...item, checked: !item.checked } : item,
+      ),
+    );
+  };
+
+  const selectedCount = scannedItems.filter((i) => i.checked).length;
+
+  return createPortal(
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[1000] flex items-end justify-center"
+      style={{ background: "rgba(0,0,0,0.4)" }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.div
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 30, stiffness: 350 }}
+        className="w-full bg-surface rounded-t-2xl overflow-hidden"
+        style={{ maxHeight: "80dvh", maxWidth: 440 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Handle bar */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div
+            className="w-10 h-1 rounded-full"
+            style={{ background: "var(--zu-border)" }}
+          />
+        </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3">
+          <h3 className="text-base font-semibold text-text-1">
+            Erkannte Artikel ({scannedItems.length})
+          </h3>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-2"
+          >
+            <X className="w-5 h-5 text-text-2" />
+          </button>
+        </div>
+        {/* Item list */}
+        <div
+          className="overflow-y-auto px-4 pb-2"
+          style={{ maxHeight: "calc(80dvh - 160px)" }}
+        >
+          {scannedItems.map((item, idx) => {
+            const chipColor = getCategoryChipColor(item.category);
+            return (
+              <button
+                key={idx}
+                onClick={() => toggleItem(idx)}
+                className="w-full flex items-center gap-3 py-3 transition"
+                style={{
+                  borderBottom: "1px solid var(--zu-border)",
+                  opacity: item.checked ? 1 : 0.4,
+                }}
+              >
+                <div
+                  className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 transition"
+                  style={{
+                    background: item.checked
+                      ? "var(--color-accent)"
+                      : "transparent",
+                    border: item.checked
+                      ? "none"
+                      : "2px solid var(--zu-border)",
+                  }}
+                >
+                  {item.checked && (
+                    <Check className="w-4 h-4 text-white" />
+                  )}
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="text-sm text-text-1 font-medium">
+                    {item.name}
+                    {item.quantity > 1 && (
+                      <span className="text-text-3 ml-1">
+                        ×{item.quantity}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: chipColor.dot }}
+                    />
+                    <span className="text-[10px] text-text-3">
+                      {item.category}
+                    </span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        {/* Action buttons */}
+        <div className="px-4 pt-4 flex gap-3" style={{ borderTop: "1px solid var(--zu-border)", paddingBottom: "calc(1rem + env(safe-area-inset-bottom, 0px))" }}>
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl text-sm font-medium text-text-2 transition"
+            style={{ background: "var(--surface-2)" }}
+          >
+            Abbrechen
+          </button>
+          <button
+            onClick={() => {
+              const selected = scannedItems.filter((i) => i.checked);
+              if (selected.length > 0) {
+                onAdd(selected);
+              }
+              onClose();
+            }}
+            disabled={selectedCount === 0}
+            className="flex-1 py-3 rounded-xl text-sm font-semibold text-white transition"
+            style={{
+              background:
+                selectedCount > 0
+                  ? "var(--color-accent)"
+                  : "var(--zu-border)",
+            }}
+          >
+            {selectedCount > 0
+              ? `${selectedCount} hinzufügen`
+              : "Hinzufügen"}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>,
+    document.body,
+  );
+}
+
 // ── Add Item Bar ───────────────────────────────────────────────────
 function AddItemBar({
   storeId,
@@ -2129,16 +2292,20 @@ function AddItemBar({
   existingNames,
   customTemplates,
   onAdd,
+  onScanAdd,
   categoryOrder,
   itemEditing,
+  globalItems,
 }: {
   storeId: string;
   stores: StoreInfo[];
   existingNames: Set<string>;
   customTemplates: GroceryTemplate[];
   onAdd: (name: string, category: string) => void;
+  onScanAdd: (items: ScannedItem[]) => void;
   categoryOrder: string[];
   itemEditing?: boolean;
+  globalItems: GlobalItem[];
 }) {
   const [query, setQuery] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -2147,6 +2314,136 @@ function AddItemBar({
     string | null
   >(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResults, setScanResults] = useState<ScannedItem[] | null>(null);
+
+  const resolveScanCategory = useCallback(
+    (name: string): string => {
+      // 1. Check GROCERY_DATABASE
+      const dbMatch = GROCERY_DATABASE.find(
+        (g) => g.name.toLowerCase() === name.toLowerCase(),
+      );
+      if (dbMatch) return dbMatch.category;
+      // 2. Check global items
+      const globalMatch = globalItems.find(
+        (g) => g.name.toLowerCase() === name.toLowerCase(),
+      );
+      if (globalMatch) return globalMatch.category;
+      // 3. Check custom templates
+      const tmpl = customTemplates?.find(
+        (g) => g.name.toLowerCase() === name.toLowerCase(),
+      );
+      if (tmpl) return tmpl.category;
+      return "Sonstiges";
+    },
+    [globalItems, customTemplates],
+  );
+
+  const handleCameraClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Resize image to max 1280px on longest side and compress to JPEG
+  // to keep base64 payload under Supabase Edge Function limits (~2MB).
+  const resizeImage = useCallback(
+    (file: File, maxSize = 1280, quality = 0.75): Promise<{ base64: string; mediaType: string }> =>
+      new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(url);
+          let { width, height } = img;
+          if (width > maxSize || height > maxSize) {
+            const ratio = Math.min(maxSize / width, maxSize / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return reject(new Error("Canvas context nicht verfügbar"));
+          ctx.drawImage(img, 0, 0, width, height);
+          // Always output JPEG for smaller payload
+          const dataUrl = canvas.toDataURL("image/jpeg", quality);
+          const base64 = dataUrl.split(",")[1];
+          resolve({ base64, mediaType: "image/jpeg" });
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error("Bild konnte nicht geladen werden"));
+        };
+        img.src = url;
+      }),
+    [],
+  );
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset input so the same file can be re-selected
+    e.target.value = "";
+
+    const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      toast.error("VITE_ANTHROPIC_API_KEY ist nicht gesetzt.");
+      return;
+    }
+
+    setIsScanning(true);
+
+    try {
+      // Resize and compress image to keep payload small
+      const { base64, mediaType } = await resizeImage(file);
+
+      // apiFetch already parses JSON and throws on error.
+      // 30s timeout — Claude Vision can be slow on large images.
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const json = await apiFetch("/scan-shopping-list", {
+        method: "POST",
+        body: JSON.stringify({
+          image_base64: base64,
+          media_type: mediaType,
+          anthropic_api_key: anthropicKey,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!json.items || json.items.length === 0) {
+        toast.error("Keine Artikel erkannt — bitte nochmal versuchen");
+        setIsScanning(false);
+        return;
+      }
+
+      // Assign categories and create ScannedItem array
+      const scanned: ScannedItem[] = json.items.map((item: { name: string; quantity: number }) => ({
+        name: item.name,
+        quantity: item.quantity,
+        category: resolveScanCategory(item.name),
+        checked: true,
+      }));
+
+      setScanResults(scanned);
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        toast.error("Zeitüberschreitung — bitte nochmal versuchen");
+      } else {
+        console.log("Scan error:", err);
+        toast.error(
+          err?.message?.includes("Fehler")
+            ? err.message
+            : "Fehler beim Erkennen — bitte nochmal versuchen",
+        );
+      }
+    } finally {
+      setIsScanning(false);
+    }
+  };
 
   useEffect(() => {
     const suggestions = getQuickSuggestions(storeId).filter(
@@ -2403,6 +2700,29 @@ function AddItemBar({
                 <ArrowUp className="w-4 h-4 text-white" />
               </button>
             )}
+            {query.trim().length === 0 && (
+              <button
+                type="button"
+                onClick={handleCameraClick}
+                disabled={isScanning}
+                className="flex items-center justify-center w-7 h-7 rounded-full flex-shrink-0 transition"
+                style={{ opacity: isScanning ? 0.5 : 1 }}
+              >
+                {isScanning ? (
+                  <Loader2 className="w-4.5 h-4.5 text-text-3 animate-spin" />
+                ) : (
+                  <Camera className="w-4.5 h-4.5 text-text-3" />
+                )}
+              </button>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={handleFileChange}
+            />
           </div>
         </form>
       </div>
@@ -2414,6 +2734,19 @@ function AddItemBar({
             categories={pickerCategories}
             onSelect={handleCategoryPicked}
             onClose={() => setPendingCustomName(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {scanResults && (
+          <ScanPreviewSheet
+            items={scanResults}
+            onClose={() => setScanResults(null)}
+            onAdd={(selected) => {
+              onScanAdd(selected);
+              setScanResults(null);
+            }}
           />
         )}
       </AnimatePresence>
@@ -3448,6 +3781,63 @@ export function EinkaufenScreen({
     [items, selectedStore, getCustomCategoryIndex, updateItems],
   );
 
+  const handleScanAdd = useCallback(
+    (scannedItems: ScannedItem[]) => {
+      updateItems((prev) => {
+        let updated = [...prev];
+        for (const scanned of scannedItems) {
+          const catIdx = getCustomCategoryIndex(scanned.category, selectedStore);
+          const storeUnchecked = updated
+            .filter((i) => i.store === selectedStore && !i.is_checked)
+            .sort((a, b) => a.position - b.position);
+
+          let insertPosition = 0;
+          for (const existing of storeUnchecked) {
+            if (existing.manually_positioned) {
+              if (existing.position >= insertPosition) {
+                insertPosition = existing.position + 1;
+              }
+              continue;
+            }
+            const existingCatIdx = getCustomCategoryIndex(existing.category, selectedStore);
+            if (existingCatIdx <= catIdx) {
+              insertPosition = existing.position + 1;
+            }
+          }
+
+          const newItem: ShoppingItem = {
+            id: generateId(),
+            name: scanned.name,
+            store: selectedStore,
+            category: scanned.category,
+            is_checked: false,
+            position: insertPosition,
+            quantity: scanned.quantity,
+            household_id: householdId || "",
+          };
+
+          updated = updated.map((i) =>
+            i.store === selectedStore && !i.is_checked && i.position >= insertPosition
+              ? { ...i, position: i.position + 1 }
+              : i,
+          );
+          updated.push(newItem);
+
+          // Upsert global item if not in built-in DB
+          const isBuiltIn = GROCERY_DATABASE.some(
+            (g) => g.name.toLowerCase() === scanned.name.toLowerCase(),
+          );
+          if (!isBuiltIn && householdId) {
+            upsertGlobalItem(householdId, scanned.name, scanned.category);
+          }
+        }
+        return updated;
+      });
+      toast.success(`${scannedItems.length} Artikel hinzugefügt`);
+    },
+    [selectedStore, getCustomCategoryIndex, updateItems, householdId],
+  );
+
   const handleClearChecked = useCallback(() => {
     updateItems((prev) =>
       prev.filter(
@@ -4377,8 +4767,10 @@ export function EinkaufenScreen({
           existingNames={existingNames}
           customTemplates={customTemplates}
           onAdd={handleAddItem}
+          onScanAdd={handleScanAdd}
           categoryOrder={currentCategoryOrder}
           itemEditing={isItemNameEditing}
+          globalItems={globalItems}
         />
       </div>
 
