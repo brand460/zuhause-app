@@ -3,9 +3,10 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   Plus, Search, Heart, Clock, ChevronLeft, Star, Minus, ExternalLink,
   Pencil, X, Loader2, Link2, FileText, Camera, Trash2, ArrowRightLeft, RefreshCw,
+  Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { apiFetch } from "../supabase-client";
+import { supabase, apiFetch, API_BASE } from "../supabase-client";
 import { useKvRealtime, broadcastChange } from "../use-kv-realtime";
 import { ImageWithFallback } from "../figma/ImageWithFallback";
 import type {
@@ -15,6 +16,8 @@ import { RECIPE_CATEGORIES } from "./kochen-types";
 import { useBackHandler, pushBack, popBack } from "../ui/use-back-handler";
 import { useAuth } from "../auth-context";
 import { useKeyboardOffset } from "../ui/use-keyboard-offset";
+import { INGREDIENT_UNITS } from "./ingredient-units";
+import { GROCERY_DATABASE, buildMergedItems, buildExcludeSet, getCategoryChipColor } from "../einkaufen/shopping-data";
 
 const DRAWER_SPRING = { type: "spring" as const, damping: 25, stiffness: 300 };
 
@@ -70,7 +73,7 @@ function emptyRecipe(): Recipe {
     prep_time_minutes: null,
     cook_time_minutes: null,
     servings: 4,
-    ingredients: [],
+    ingredients: [{ name: "", quantity: "", unit: "" }],
     steps: [],
     image_url: null,
     categories: [],
@@ -296,7 +299,10 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   }, [openRecipeId, loading]);
 
   const openEditMode = (recipe: Recipe) => {
-    setEditRecipe({ ...recipe, ingredients: [...recipe.ingredients], steps: [...recipe.steps], categories: [...recipe.categories] });
+    const ings = recipe.ingredients.length > 0
+      ? [...recipe.ingredients]
+      : [{ name: "", quantity: "", unit: "" }];
+    setEditRecipe({ ...recipe, ingredients: ings, steps: [...recipe.steps], categories: [...recipe.categories] });
     setActiveView("edit");
     pushBack(() => {
       setEditRecipe(null);
@@ -308,13 +314,18 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   const saveEdit = async () => {
     if (!editRecipe) return;
     const cameFromDetail = !!selectedRecipeId; // true if editing existing recipe from detail view
-    const updated = recipes.map((r) => (r.id === editRecipe.id ? editRecipe : r));
+    const cleanedRecipe = {
+      ...editRecipe,
+      ingredients: editRecipe.ingredients.filter((ing) => ing.name.trim() !== ""),
+      steps: editRecipe.steps.filter((step) => step.description.trim() !== ""),
+    };
+    const updated = recipes.map((r) => (r.id === cleanedRecipe.id ? cleanedRecipe : r));
     // If new recipe (not in list), add
-    if (!recipes.find((r) => r.id === editRecipe.id)) {
-      updated.push(editRecipe);
+    if (!recipes.find((r) => r.id === cleanedRecipe.id)) {
+      updated.push(cleanedRecipe);
     }
     await saveRecipes(updated);
-    setSelectedRecipeId(editRecipe.id);
+    setSelectedRecipeId(cleanedRecipe.id);
     setActiveView("detail");
     setEditRecipe(null);
     popBack(); // remove edit history entry
@@ -450,7 +461,9 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
           comment: "",
           is_favorite: false,
           categories: res.recipe.categories || [],
-          ingredients: res.recipe.ingredients || [],
+          ingredients: (res.recipe.ingredients && res.recipe.ingredients.length > 0)
+            ? res.recipe.ingredients
+            : [{ name: "", quantity: "", unit: "" }],
           steps: res.recipe.steps || [],
         };
         setEditRecipe(newRecipe);
@@ -570,6 +583,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
           if (selectedRecipeId) setActiveView("detail");
           else setActiveView("main");
         }}
+        householdId={householdId || ""}
       />
     );
   }
@@ -578,44 +592,48 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Header + Segmented Control */}
-      <div className="flex-shrink-0 flex flex-col items-center gap-3 px-4 pt-4 pb-2" style={{ background: 'var(--zu-bg)' }}>
-        <div className="w-full flex items-center justify-between">
-          <h2 className="text-lg font-bold text-text-1">Kochen</h2>
-        </div>
-        {/* Segmented Control */}
-        <div
-          className="flex items-center"
-          style={{
-            width: 220,
-            padding: 3,
-            borderRadius: 999,
-            background: "var(--color-surface-2)",
-          }}
-        >
-          {(["rezepte", "wochenplaner"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setKochenTab(tab)}
-              className="flex-1 text-center text-xs py-1.5 transition-all"
+      <div className="flex-shrink-0" style={{ background: 'var(--zu-bg)' }}>
+        <div style={{ maxWidth: 680, margin: "0 auto", width: "100%" }}>
+          <div className="flex items-center px-4 pt-4 pb-1">
+            <h2 className="text-lg font-bold text-text-1">Kochen</h2>
+          </div>
+          <div className="flex justify-center pb-3 pt-1">
+            <div
+              className="flex items-center"
               style={{
+                width: 220,
+                padding: 3,
                 borderRadius: 999,
-                fontWeight: kochenTab === tab ? 600 : 400,
-                color: kochenTab === tab ? "var(--color-text-1)" : "var(--color-text-3)",
-                background: kochenTab === tab
-                  ? "var(--color-surface)"
-                  : "transparent",
-                boxShadow: kochenTab === tab ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                background: "var(--color-surface-2)",
               }}
             >
-              {tab === "rezepte" ? "Rezepte" : "Wochenplaner"}
-            </button>
-          ))}
+              {(["rezepte", "wochenplaner"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setKochenTab(tab)}
+                  className="flex-1 text-center text-xs py-1.5 transition-all"
+                  style={{
+                    borderRadius: 999,
+                    fontWeight: kochenTab === tab ? 600 : 400,
+                    color: kochenTab === tab ? "var(--color-text-1)" : "var(--color-text-3)",
+                    background: kochenTab === tab
+                      ? "var(--color-surface)"
+                      : "transparent",
+                    boxShadow: kochenTab === tab ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                  }}
+                >
+                  {tab === "rezepte" ? "Rezepte" : "Wochenplaner"}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
       {/* WOCHENPLANER — only when tab active */}
       {kochenTab === "wochenplaner" && (
       <div className="flex-shrink-0 border-b border-border" style={{ background: 'var(--surface)' }}>
+        <div style={{ maxWidth: 680, margin: "0 auto", width: "100%" }}>
         <div className="px-4 pt-3 pb-1" />
         <div
           ref={weekScrollRef}
@@ -688,24 +706,16 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
             );
           })}
         </div>
+        </div>{/* /maxWidth */}
       </div>
       )}
 
-      {/* KOCHBUCH — visible in both tabs (recipes always, wochenplaner shows it below) */}
+      {/* KOCHBUCH */}
       {kochenTab === "rezepte" && (
       <div className="flex-1 min-h-0 flex flex-col">
-        {/* + Button only, no title — screen title "Kochen" is enough */}
-        <div className="flex items-center justify-end px-4 pt-2 pb-2">
-          <button
-            onClick={() => setShowAddSheet(true)}
-            className="w-8 h-8 rounded-full bg-accent flex items-center justify-center text-white"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
 
         {/* Filter Chips */}
-        <div className="flex-shrink-0 px-4 pb-2">
+        <div className="flex-shrink-0 px-4 pb-2" style={{ maxWidth: 680, margin: "0 auto", width: "100%" }}>
           <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
             {RECIPE_CATEGORIES.map((cat) => (
               <button
@@ -737,7 +747,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
         </div>
 
         {/* Search */}
-        <div className="flex-shrink-0 px-4 pb-3">
+        <div className="flex-shrink-0 px-4 pb-3" style={{ maxWidth: 680, margin: "0 auto", width: "100%" }}>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-3" />
             <input
@@ -758,7 +768,8 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
         </div>
 
         {/* Recipe Grid */}
-        <div className="flex-1 overflow-y-auto px-4 pb-4">
+        <div className="flex-1 overflow-y-auto pb-4">
+          <div style={{ maxWidth: 680, margin: "0 auto", width: "100%", padding: "0 16px" }}>
           {filteredRecipes.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-text-3">
               <span className="text-4xl mb-3">📖</span>
@@ -766,14 +777,16 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
               <p className="text-xs mt-1">Tippe auf + um ein Rezept hinzuzufügen</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
               {filteredRecipes.map((recipe) => (
                 <div
                   key={recipe.id}
-                  className="rounded-xl overflow-hidden bg-surface border border-border cursor-pointer active:scale-[0.98] transition"
+                  className="cursor-pointer active:scale-[0.97] transition overflow-hidden"
+                  style={{ borderRadius: 16, boxShadow: "var(--shadow-card)" }}
                   onClick={() => openRecipeDetail(recipe.id)}
                 >
-                  <div className="relative aspect-square bg-surface-2">
+                  {/* Full-bleed image with overlay — aspect 4/5 */}
+                  <div className="relative bg-surface-2" style={{ aspectRatio: "4/5" }}>
                     {recipe.image_url ? (
                       <ImageWithFallback
                         src={recipe.image_url}
@@ -781,37 +794,84 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-4xl">🍽️</div>
+                      <div className="w-full h-full flex items-center justify-center text-5xl bg-surface-2">🍽️</div>
                     )}
+
+                    {/* Dark gradient overlay bottom */}
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 50%, transparent 100%)",
+                        borderRadius: "inherit",
+                      }}
+                    />
+
+                    {/* Favorite button — top right */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleFavorite(recipe.id);
                       }}
-                      className="absolute top-2 right-2 w-7 h-7 rounded-full bg-surface/80 flex items-center justify-center"
+                      className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
+                      style={{ background: "rgba(0,0,0,0.32)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
                     >
                       <Heart
-                        className={`w-4 h-4 ${recipe.is_favorite ? "fill-accent text-accent" : "text-text-3"}`}
+                        className={`w-3.5 h-3.5 ${recipe.is_favorite ? "fill-white text-white" : "text-white/80"}`}
                       />
                     </button>
-                  </div>
-                  <div className="p-2">
-                    <p className="text-sm font-medium text-text-1 truncate">{recipe.title}</p>
-                    <div className="flex items-center gap-1 mt-0.5">
+
+                    {/* Title + meta chips — bottom overlay */}
+                    <div className="absolute bottom-0 left-0 right-0 px-2.5 pb-2.5 pt-6">
+                      <p
+                        className="text-white font-semibold leading-tight"
+                        style={{ fontSize: 14, textShadow: "0 1px 3px rgba(0,0,0,0.4)" }}
+                      >
+                        {recipe.title}
+                      </p>
                       {totalTime(recipe) && (
-                        <span className="text-xs text-text-3 flex items-center gap-0.5">
-                          <Clock className="w-3 h-3" /> {totalTime(recipe)}
-                        </span>
-                      )}
-                      {recipe.categories[0] && (
-                        <span className="text-xs text-text-3 ml-auto">{recipe.categories[0]}</span>
-                      )}
+                         <p
+                           className="text-white/75 mt-0.5"
+                           style={{ fontSize: 11, textShadow: "0 1px 2px rgba(0,0,0,0.4)" }}
+                         >
+                           {totalTime(recipe)}
+                         </p>
+                       )}
+                       
+                       
+                      <div className="flex flex-wrap gap-1" style={{display:"none"}}>
+                        {recipe.ingredients.length > 0 && (
+                          <span
+                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full font-medium"
+                            style={{ fontSize: 10, background: "rgba(255,255,255,0.40)", color: "#374151", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
+                          >
+                            {recipe.ingredients.length} Zutaten
+                          </span>
+                        )}
+                        {totalTime(recipe) && (
+                          <span
+                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full font-medium"
+                            style={{ fontSize: 10, background: "rgba(255,255,255,0.40)", color: "#374151", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
+                          >
+                            <Clock className="w-2.5 h-2.5 flex-shrink-0" />
+                            {totalTime(recipe)}
+                          </span>
+                        )}
+                        {recipe.categories[0] && (
+                          <span
+                            className="flex items-center px-1.5 py-0.5 rounded-full font-medium"
+                            style={{ fontSize: 10, background: "rgba(255,255,255,0.40)", color: "#374151", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
+                          >
+                            {recipe.categories[0]}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           )}
+          </div>
         </div>
       </div>
       )}
@@ -1241,6 +1301,24 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
           />
         )}
       </AnimatePresence>
+
+      {/* FAB — nur im Rezepte-Tab */}
+      {kochenTab === "rezepte" && (
+        <button
+          onClick={() => setShowAddSheet(true)}
+          className="fixed flex items-center justify-center rounded-full bg-accent text-white shadow-lg active:scale-95 transition-transform"
+          style={{
+            width: 52,
+            height: 52,
+            bottom: "calc(72px + env(safe-area-inset-bottom) + 16px)",
+            right: 16,
+            zIndex: 40,
+          }}
+          aria-label="Rezept hinzufügen"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      )}
     </div>
   );
 }
@@ -1301,10 +1379,10 @@ function RecipeDetailView({
           </button>
           <div className="flex gap-2">
             <button onClick={onToggleFavorite} className="w-8 h-8 rounded-full bg-surface/80 flex items-center justify-center">
-              <Heart className={`w-4 h-4 ${recipe.is_favorite ? "fill-accent text-accent" : "text-text-3"}`} />
+              <Heart className="w-4 h-4 text-text-2" />
             </button>
             <button onClick={onEdit} className="w-8 h-8 rounded-full bg-surface/80 flex items-center justify-center">
-              <Pencil className="w-4 h-4 text-text-3" />
+              <Pencil className="w-4 h-4 text-text-2" />
             </button>
           </div>
         </div>
@@ -1492,6 +1570,63 @@ function RecipeDetailView({
 }
 
 // ══════════════════════════════════════════════════════════════════════
+// AUTO-UNIT LOOKUP (uses INGREDIENT_UNITS from ingredient-units.ts)
+// ══════════════════════════════════════════════════════════════════════
+
+function guessUnit(name: string): string | null {
+  const lower = name.toLowerCase().trim();
+  if (!lower) return null;
+  // Exact match
+  if (INGREDIENT_UNITS.hasOwnProperty(lower)) return INGREDIENT_UNITS[lower];
+  // Partial match
+  for (const [key, unit] of Object.entries(INGREDIENT_UNITS)) {
+    if (lower.includes(key) || key.includes(lower)) return unit;
+  }
+  return null;
+}
+
+// ── Global items type (for ingredient autocomplete) ──
+interface GlobalItem {
+  name: string;
+  category: string;
+  created_by_household_id: string;
+  times_used: number;
+  original_name?: string;
+  deleted?: boolean;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// COMPRESS IMAGE HELPER
+// ══════════════════════════════════════════════════════════════════════
+
+function compressImage(file: File, maxSize: number = 800): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.width, h = img.height;
+      if (w > maxSize || h > maxSize) {
+        if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+        else { w = Math.round(w * maxSize / h); h = maxSize; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { reject(new Error("Canvas context failed")); return; }
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (blob) => blob ? resolve(blob) : reject(new Error("toBlob failed")),
+        "image/jpeg",
+        0.85,
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Image load failed")); };
+    img.src = url;
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
 // RECIPE EDIT VIEW
 // ══════════════════════════════════════════════════════════════════════
 
@@ -1500,13 +1635,77 @@ function RecipeEditView({
   onChange,
   onSave,
   onCancel,
+  householdId,
 }: {
   recipe: Recipe;
   onChange: (r: Recipe) => void;
   onSave: () => void;
   onCancel: () => void;
+  householdId: string;
 }) {
   const update = (partial: Partial<Recipe>) => onChange({ ...recipe, ...partial });
+
+  // ── Image upload state ──
+  const [showImageSheet, setShowImageSheet] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [imageUrlDraft, setImageUrlDraft] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Ingredient autocomplete state ──
+  const [activeIngIdx, setActiveIngIdx] = useState<number | null>(null);
+  const [ingQuery, setIngQuery] = useState("");
+  const [globalItems, setGlobalItems] = useState<GlobalItem[]>([]);
+
+  // Fetch global items for autocomplete
+  useEffect(() => {
+    if (!householdId) return;
+    (async () => {
+      try {
+        const res = await apiFetch(`/global-items?household_id=${householdId}`);
+        setGlobalItems(res.items || []);
+      } catch (err) {
+        console.log("[RecipeEdit] Failed to load global items:", err);
+      }
+    })();
+  }, [householdId]);
+
+  // Build merged suggestion list using shared buildMergedItems — correctly
+  // handles renames (old DB entries suppressed) and soft-deletes.
+  const ingredientSuggestions = useMemo(() => {
+    if (!ingQuery.trim()) return [];
+    const q = ingQuery.toLowerCase();
+    const merged = buildMergedItems(globalItems);
+    return merged
+      .filter((g) => g.name.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((g) => ({ name: g.name, category: g.category }));
+  }, [ingQuery, globalItems]);
+
+  // ── Back handlers for image drawers ──
+  useBackHandler(showImageSheet, () => setShowImageSheet(false));
+  useBackHandler(showUrlInput, () => { setShowUrlInput(false); setImageUrlDraft(""); });
+
+  const { bottomOffset: editBottomOffset, vpHeight: editVpHeight } = useKeyboardOffset();
+
+  // ── Ensure ingredients have at least one empty row ──
+  useEffect(() => {
+    if (recipe.ingredients.length === 0) {
+      onChange({ ...recipe, ingredients: [{ name: "", quantity: "", unit: "" }] });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Ensure steps have at least one empty row ──
+  useEffect(() => {
+    if (recipe.steps.length === 0) {
+      onChange({ ...recipe, steps: [{ position: 1, description: "" }] });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Ingredient refs for auto-focus ──
+  const ingNameRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const updateIngredient = (idx: number, field: keyof Ingredient, val: string) => {
     const next = [...recipe.ingredients];
@@ -1514,13 +1713,37 @@ function RecipeEditView({
     update({ ingredients: next });
   };
 
+  const selectIngredientSuggestion = (idx: number, name: string) => {
+    const next = [...recipe.ingredients];
+    next[idx] = { ...next[idx], name };
+    // Auto-set unit when selecting from autocomplete (not while typing)
+    if (!next[idx].unit) {
+      const unitFromMap = INGREDIENT_UNITS[name.toLowerCase()];
+      const unitFromGuess = guessUnit(name);
+      const resolved = unitFromMap !== undefined ? unitFromMap : (unitFromGuess ?? "");
+      if (resolved) next[idx] = { ...next[idx], unit: resolved };
+    }
+    update({ ingredients: next });
+    setActiveIngIdx(null);
+    setIngQuery("");
+  };
+
   const addIngredient = () => {
-    update({ ingredients: [...recipe.ingredients, { name: "", quantity: "", unit: "" }] });
+    const newIngredients = [...recipe.ingredients, { name: "", quantity: "", unit: "" }];
+    update({ ingredients: newIngredients });
+    // Focus the new ingredient's name field after render
+    setTimeout(() => {
+      ingNameRefs.current[newIngredients.length - 1]?.focus();
+    }, 50);
   };
 
   const removeIngredient = (idx: number) => {
-    update({ ingredients: recipe.ingredients.filter((_, i) => i !== idx) });
+    const next = recipe.ingredients.filter((_, i) => i !== idx);
+    update({ ingredients: next.length === 0 ? [{ name: "", quantity: "", unit: "" }] : next });
   };
+
+  // ── Step refs for auto-focus ──
+  const stepRefs = useRef<(HTMLTextAreaElement | null)[]>([]);
 
   const updateStep = (idx: number, desc: string) => {
     const next = [...recipe.steps];
@@ -1529,14 +1752,16 @@ function RecipeEditView({
   };
 
   const addStep = () => {
-    update({
-      steps: [...recipe.steps, { position: recipe.steps.length + 1, description: "" }],
-    });
+    const newSteps = [...recipe.steps, { position: recipe.steps.length + 1, description: "" }];
+    update({ steps: newSteps });
+    setTimeout(() => {
+      stepRefs.current[newSteps.length - 1]?.focus();
+    }, 50);
   };
 
   const removeStep = (idx: number) => {
     const next = recipe.steps.filter((_, i) => i !== idx).map((s, i) => ({ ...s, position: i + 1 }));
-    update({ steps: next });
+    update({ steps: next.length === 0 ? [{ position: 1, description: "" }] : next });
   };
 
   const toggleCategory = (cat: string) => {
@@ -1544,6 +1769,58 @@ function RecipeEditView({
       update({ categories: recipe.categories.filter((c) => c !== cat) });
     } else {
       update({ categories: [...recipe.categories, cat] });
+    }
+  };
+
+  // ── Auto-grow textarea helper ──
+  const autoGrow = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+  };
+
+  // Auto-grow existing step textareas on mount
+  useEffect(() => {
+    stepRefs.current.forEach((el) => { if (el) autoGrow(el); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipe.steps.length]);
+
+  // ── Image upload via file picker ──
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = ""; // reset for re-selection
+
+    setUploading(true);
+    setShowImageSheet(false);
+    try {
+      const blob = await compressImage(file, 800);
+
+      // Get fresh auth token
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Nicht angemeldet");
+
+      const formData = new FormData();
+      formData.append("file", blob, `${recipe.id}.jpg`);
+      formData.append("household_id", householdId);
+      formData.append("recipe_id", recipe.id);
+
+      const res = await fetch(`${API_BASE}/recipe-image-upload`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload fehlgeschlagen");
+
+      update({ image_url: data.url });
+      toast.success("Bild hochgeladen");
+    } catch (err: any) {
+      console.error("[RecipeEdit] Image upload error:", err);
+      toast.error(err?.message || "Upload fehlgeschlagen");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -1563,258 +1840,461 @@ function RecipeEditView({
         >Speichern</button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-6">
-        {/* Title */}
-        <div className="mt-4">
-          <label className="text-xs text-text-3 mb-1 block">Titel{isNull(recipe.title) && <span style={{ color: "var(--danger)" }}> *</span>}</label>
-          <input
-            type="search"
-            value={recipe.title}
-            onChange={(e) => update({ title: e.target.value })}
-            placeholder="Rezeptname"
-            name="recipe-title"
-            inputMode="text"
-            autoComplete="off"
-            autoCapitalize="sentences"
-            data-lpignore="true"
-            data-1p-ignore="true"
-            data-form-type="other"
-            className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
-          />
-        </div>
-
-        {/* Description */}
-        <div className="mt-3">
-          <label className="text-xs text-text-3 mb-1 block">Beschreibung</label>
-          <textarea
-            value={recipe.description || ""}
-            onChange={(e) => update({ description: e.target.value })}
-            placeholder="Kurze Beschreibung..."
-            name="recipe-desc"
-            autoComplete="off"
-            autoCapitalize="sentences"
-            data-lpignore="true"
-            data-1p-ignore="true"
-            data-form-type="other"
-            className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none resize-none"
-            rows={2}
-          />
-        </div>
-
-        {/* Image URL */}
-        <div className="mt-3">
-          <label className="text-xs text-text-3 mb-1 block">Bild-URL</label>
-          <input
-            type="search"
-            value={recipe.image_url || ""}
-            onChange={(e) => update({ image_url: e.target.value || null })}
-            placeholder="https://..."
-            name="recipe-image-url"
-            inputMode="text"
-            autoComplete="off"
-            data-lpignore="true"
-            data-1p-ignore="true"
-            data-form-type="other"
-            className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
-          />
-        </div>
-
-        {/* Source URL */}
-        <div className="mt-3">
-          <label className="text-xs text-text-3 mb-1 block">Original-URL</label>
-          <input
-            type="search"
-            value={recipe.source_url || ""}
-            onChange={(e) => update({ source_url: e.target.value })}
-            placeholder="https://..."
-            name="recipe-source-url"
-            inputMode="text"
-            autoComplete="off"
-            data-lpignore="true"
-            data-1p-ignore="true"
-            data-form-type="other"
-            className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
-          />
-        </div>
-
-        {/* Time + Servings row — type="search" suppresses Chrome toolbar, inputMode="numeric" keeps number keyboard */}
-        <div className="grid grid-cols-3 gap-3 mt-3">
-          <div>
-            <label className="text-xs text-text-3 mb-1 block">Vorbereit. (Min)</label>
-            <input
-              type="search"
-              inputMode="numeric"
-              name="recipe-prep-time"
-              autoComplete="off"
-              data-lpignore="true"
-              data-1p-ignore="true"
-              data-form-type="other"
-              value={recipe.prep_time_minutes ?? ""}
-              onChange={(e) => update({ prep_time_minutes: e.target.value ? parseInt(e.target.value) : null })}
-              className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-text-3 mb-1 block">Kochzeit (Min)</label>
-            <input
-              type="search"
-              inputMode="numeric"
-              name="recipe-cook-time"
-              autoComplete="off"
-              data-lpignore="true"
-              data-1p-ignore="true"
-              data-form-type="other"
-              value={recipe.cook_time_minutes ?? ""}
-              onChange={(e) => update({ cook_time_minutes: e.target.value ? parseInt(e.target.value) : null })}
-              className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-text-3 mb-1 block">Portionen</label>
-            <input
-              type="search"
-              inputMode="numeric"
-              name="recipe-servings"
-              autoComplete="off"
-              data-lpignore="true"
-              data-1p-ignore="true"
-              data-form-type="other"
-              value={recipe.servings ?? ""}
-              onChange={(e) => update({ servings: e.target.value ? parseInt(e.target.value) : null })}
-              className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
-            />
-          </div>
-        </div>
-
-        {/* Categories */}
-        <div className="mt-4">
-          <label className="text-xs text-text-3 mb-1 block">Kategorien</label>
-          <div className="flex flex-wrap gap-2">
-            {RECIPE_CATEGORIES.filter((c) => c !== "Alle" && c !== "Favoriten" && c !== "Schnell").map((cat) => (
+      <div className="flex-1 overflow-y-auto pb-6">
+        {/* ── Image Area ── */}
+        <div
+          className="relative w-full flex-shrink-0 cursor-pointer"
+          style={{ height: 220 }}
+          onClick={() => !uploading && setShowImageSheet(true)}
+        >
+          {uploading ? (
+            <div className="w-full h-full bg-surface-2 flex flex-col items-center justify-center gap-2">
+              <Loader2 className="w-6 h-6 animate-spin text-accent" />
+              <span className="text-xs text-text-3">Wird hochgeladen…</span>
+            </div>
+          ) : recipe.image_url ? (
+            <div className="relative w-full h-full">
+              <ImageWithFallback src={recipe.image_url} alt={recipe.title} className="w-full h-full object-cover" />
+              {/* Remove button */}
               <button
-                key={cat}
-                onClick={() => toggleCategory(cat)}
-                className={`px-3 py-1 rounded-full text-xs transition ${
-                  recipe.categories.includes(cat)
-                    ? "font-semibold"
-                    : "font-medium"
-                }`}
-                style={
-                  recipe.categories.includes(cat)
-                    ? {
-                        background: "var(--accent-light)",
-                        color: "var(--accent)",
-                        border: "1.5px solid var(--accent)",
-                      }
-                    : {
-                        background: "var(--surface-2)",
-                        color: "var(--text-2)",
-                        border: "1px solid var(--zu-border)",
-                      }
-                }
+                onClick={(e) => { e.stopPropagation(); update({ image_url: null }); }}
+                className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center"
+                style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)" }}
               >
-                {cat}
+                <X className="w-4 h-4 text-white" />
               </button>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="w-full h-full bg-surface-2 flex flex-col items-center justify-center gap-2">
+              <Camera className="w-8 h-8 text-text-3" />
+              <span className="text-sm text-text-3">Foto hinzufügen</span>
+            </div>
+          )}
         </div>
 
-        {/* Ingredients */}
-        <div className="mt-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs text-text-3">Zutaten</label>
-            <button onClick={addIngredient} className="text-xs text-accent font-medium flex items-center gap-1">
-              <Plus className="w-3 h-3" /> Hinzufügen
-            </button>
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
+
+        <div className="px-4">
+          {/* Title */}
+          <div className="mt-4">
+            <label className="text-xs text-text-3 mb-1 block">Titel{isNull(recipe.title) && <span style={{ color: "var(--danger)" }}> *</span>}</label>
+            <input
+              type="search"
+              value={recipe.title}
+              onChange={(e) => update({ title: e.target.value })}
+              placeholder="Rezeptname"
+              name="recipe-title"
+              inputMode="text"
+              autoComplete="off"
+              autoCapitalize="sentences"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
+              className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
+            />
           </div>
-          <div className="space-y-2">
-            {recipe.ingredients.map((ing, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <input
-                  type="search"
-                  value={ing.quantity}
-                  onChange={(e) => updateIngredient(i, "quantity", e.target.value)}
-                  placeholder="Menge"
-                  name="ing-qty"
-                  inputMode="text"
-                  autoComplete="off"
-                  autoCapitalize="sentences"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-form-type="other"
-                  className="w-16 px-2 py-1.5 bg-surface-2 rounded-lg text-sm border-0 outline-none"
-                />
-                <input
-                  type="search"
-                  value={ing.unit}
-                  onChange={(e) => updateIngredient(i, "unit", e.target.value)}
-                  placeholder="Einh."
-                  name="ing-unit"
-                  inputMode="text"
-                  autoComplete="off"
-                  autoCapitalize="sentences"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-form-type="other"
-                  className="w-14 px-2 py-1.5 bg-surface-2 rounded-lg text-sm border-0 outline-none"
-                />
-                <input
-                  type="search"
-                  value={ing.name}
-                  onChange={(e) => updateIngredient(i, "name", e.target.value)}
-                  placeholder="Zutat"
-                  name="ing-name"
-                  inputMode="text"
-                  autoComplete="off"
-                  autoCapitalize="sentences"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-form-type="other"
-                  className="flex-1 px-2 py-1.5 bg-surface-2 rounded-lg text-sm border-0 outline-none"
-                />
-                <button onClick={() => removeIngredient(i)} className="flex-shrink-0">
-                  <X className="w-4 h-4 text-text-3" />
+
+          {/* Source URL */}
+          <div className="mt-3">
+            <label className="text-xs text-text-3 mb-1 block">Original-URL</label>
+            <input
+              type="search"
+              value={recipe.source_url || ""}
+              onChange={(e) => update({ source_url: e.target.value })}
+              placeholder="https://..."
+              name="recipe-source-url"
+              inputMode="text"
+              autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
+              className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
+            />
+          </div>
+
+          {/* Time + Servings row */}
+          <div className="grid grid-cols-3 gap-3 mt-3">
+            <div>
+              <label className="text-xs text-text-3 mb-1 block px-[0px] pt-[12px] pb-[0px]">Vorbereit. (Min)</label>
+              <input
+                type="search"
+                inputMode="numeric"
+                name="recipe-prep-time"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-form-type="other"
+                value={recipe.prep_time_minutes ?? ""}
+                onChange={(e) => update({ prep_time_minutes: e.target.value ? parseInt(e.target.value) : null })}
+                className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-text-3 mb-1 block px-[0px] pt-[12px] pb-[0px]">Kochzeit (Min)</label>
+              <input
+                type="search"
+                inputMode="numeric"
+                name="recipe-cook-time"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-form-type="other"
+                value={recipe.cook_time_minutes ?? ""}
+                onChange={(e) => update({ cook_time_minutes: e.target.value ? parseInt(e.target.value) : null })}
+                className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-text-3 mb-1 block px-[0px] pt-[12px] pb-[0px]">Portionen</label>
+              <input
+                type="search"
+                inputMode="numeric"
+                name="recipe-servings"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-form-type="other"
+                value={recipe.servings ?? ""}
+                onChange={(e) => update({ servings: e.target.value ? parseInt(e.target.value) : null })}
+                className="w-full px-3 py-2 bg-surface-2 rounded-xl text-sm border-0 outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Categories */}
+          <div className="mt-4">
+            <label className="text-xs text-text-3 mb-1 block px-[0px] pt-[12px] pb-[0px]">Kategorien</label>
+            <div className="flex flex-wrap gap-2">
+              {RECIPE_CATEGORIES.filter((c) => c !== "Alle" && c !== "Favoriten" && c !== "Schnell").map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => toggleCategory(cat)}
+                  className={`px-3 py-1 rounded-full text-xs transition ${
+                    recipe.categories.includes(cat)
+                      ? "font-semibold"
+                      : "font-medium"
+                  }`}
+                  style={
+                    recipe.categories.includes(cat)
+                      ? {
+                          background: "var(--accent-light)",
+                          color: "var(--accent)",
+                          border: "1.5px solid var(--accent)",
+                        }
+                      : {
+                          background: "var(--surface-2)",
+                          color: "var(--text-2)",
+                          border: "1px solid var(--zu-border)",
+                        }
+                  }
+                >
+                  {cat}
                 </button>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Steps */}
-        <div className="mt-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs text-text-3">Zubereitungsschritte</label>
-            <button onClick={addStep} className="text-xs text-accent font-medium flex items-center gap-1">
-              <Plus className="w-3 h-3" /> Hinzufügen
-            </button>
-          </div>
-          <div className="space-y-2">
-            {recipe.steps.map((step, i) => (
-              <div key={i} className="flex gap-2 items-start">
-                <div className="w-6 h-6 rounded-full bg-accent-light flex items-center justify-center flex-shrink-0 mt-1">
-                  <span className="text-xs font-bold text-accent-dark">{i + 1}</span>
+          {/* ── Ingredients ── */}
+          <div className="mt-4">
+            <label className="text-xs text-text-3 mb-2 block px-[0px] pt-[12px] pb-[0px]">Zutaten</label>
+            <div className="space-y-2">
+              {recipe.ingredients.map((ing, i) => (
+                <div key={i} className="relative">
+                  <div className="flex items-center gap-2">
+                    {/* Name — no background, like shopping list */}
+                    <input
+                      ref={(el) => { ingNameRefs.current[i] = el; }}
+                      type="search"
+                      value={ing.name}
+                      onChange={(e) => {
+                        updateIngredient(i, "name", e.target.value);
+                        setIngQuery(e.target.value);
+                        setActiveIngIdx(i);
+                      }}
+                      onFocus={() => {
+                        setActiveIngIdx(i);
+                        setIngQuery(ing.name);
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => {
+                          setActiveIngIdx((prev) => (prev === i ? null : prev));
+                          setIngQuery("");
+                        }, 200);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          setActiveIngIdx(null);
+                          setIngQuery("");
+                          if (i === recipe.ingredients.length - 1) {
+                            addIngredient();
+                          } else {
+                            ingNameRefs.current[i + 1]?.focus();
+                          }
+                        }
+                      }}
+                      placeholder="Zutat"
+                      name="ing-name"
+                      inputMode="text"
+                      autoComplete="off"
+                      autoCapitalize="sentences"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
+                      className="flex-1 min-w-0 px-2 py-1.5 bg-surface-2 rounded-lg text-sm border-0 outline-none text-text-1 placeholder:text-text-3"
+                      style={{ caretColor: 'var(--accent)' }}
+                    />
+                    {/* Quantity — compact pill */}
+                    <input
+                      type="search"
+                      value={ing.quantity}
+                      onChange={(e) => updateIngredient(i, "quantity", e.target.value)}
+                      placeholder="—"
+                      name="ing-qty"
+                      inputMode="text"
+                      autoComplete="off"
+                      autoCapitalize="sentences"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
+                      className="w-14 px-2 py-1.5 bg-surface-2 rounded-lg text-sm text-center border-0 outline-none text-text-1 placeholder:text-text-3"
+                      style={{ caretColor: 'var(--accent)' }}
+                    />
+                    {/* Unit — compact pill */}
+                    <input
+                      type="search"
+                      value={ing.unit}
+                      onChange={(e) => updateIngredient(i, "unit", e.target.value)}
+                      placeholder="—"
+                      name="ing-unit"
+                      inputMode="text"
+                      autoComplete="off"
+                      autoCapitalize="sentences"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      data-form-type="other"
+                      className="w-14 px-2 py-1.5 bg-surface-2 rounded-lg text-sm text-center border-0 outline-none text-text-1 placeholder:text-text-3"
+                      style={{ caretColor: 'var(--accent)' }}
+                    />
+                    {/* Remove */}
+                    <button onClick={() => removeIngredient(i)} className="flex-shrink-0 w-7 h-7 flex items-center justify-center">
+                      <X className="w-4 h-4 text-text-3" />
+                    </button>
+                  </div>
+                  {/* Autocomplete dropdown — opens upward */}
+                  {activeIngIdx === i && ingQuery.trim() && ingredientSuggestions.length > 0 && (
+                    <div
+                      className="absolute left-0 right-0 z-50 rounded-xl overflow-hidden"
+                      style={{
+                        bottom: "100%",
+                        marginBottom: 4,
+                        background: "var(--surface)",
+                        border: "1px solid var(--zu-border)",
+                        boxShadow: "0 -4px 16px rgba(0,0,0,0.12)",
+                        maxHeight: 200,
+                        overflowY: "auto",
+                      }}
+                    >
+                      {ingredientSuggestions.map((s) => {
+                        const catColor = getCategoryChipColor(s.category);
+                        return (
+                          <button
+                            key={s.name}
+                            onPointerDown={(e) => e.preventDefault()}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => selectIngredientSuggestion(i, s.name)}
+                            className="w-full text-left px-3 py-2.5 hover:bg-surface-2 flex items-center justify-between transition"
+                          >
+                            <span className="text-sm text-text-1">{s.name}</span>
+                            <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
+                              <span
+                                className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: catColor.dot }}
+                              />
+                              <span className="text-[10px] text-text-3">{s.category}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <textarea
-                  value={step.description}
-                  onChange={(e) => updateStep(i, e.target.value)}
-                  placeholder={`Schritt ${i + 1}...`}
-                  name="recipe-step"
-                  autoComplete="off"
-                  autoCapitalize="sentences"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-form-type="other"
-                  className="flex-1 px-2 py-1.5 bg-surface-2 rounded-lg text-sm border-0 outline-none resize-none"
-                  rows={2}
-                />
-                <button onClick={() => removeStep(i)} className="flex-shrink-0 mt-1">
-                  <X className="w-4 h-4 text-text-3" />
-                </button>
-              </div>
-            ))}
+              ))}
+            </div>
+            <button onClick={addIngredient} className="text-xs text-accent font-medium flex items-center gap-1 mt-2">
+              <Plus className="w-3 h-3" /> Hinzufügen
+            </button>
+          </div>
+
+          {/* ── Steps ── */}
+          <div className="mt-4">
+            <label className="text-xs text-text-3 mb-2 block px-[0px] pt-[12px] pb-[0px]">Zubereitungsschritte</label>
+            <div className="space-y-2">
+              {recipe.steps.map((step, i) => (
+                <div key={i} className="flex gap-2 items-start">
+                  <div className="w-6 h-6 rounded-full bg-accent-light flex items-center justify-center flex-shrink-0 mt-1">
+                    <span className="text-xs font-bold text-accent-dark">{i + 1}</span>
+                  </div>
+                  <textarea
+                    ref={(el) => { stepRefs.current[i] = el; }}
+                    value={step.description}
+                    onChange={(e) => {
+                      updateStep(i, e.target.value);
+                      autoGrow(e.target);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        const ta = e.target as HTMLTextAreaElement;
+                        // Only add new step if cursor is at end
+                        if (ta.selectionStart === ta.value.length) {
+                          e.preventDefault();
+                          if (i === recipe.steps.length - 1) {
+                            addStep();
+                          } else {
+                            stepRefs.current[i + 1]?.focus();
+                          }
+                        }
+                      }
+                    }}
+                    onFocus={(e) => autoGrow(e.target)}
+                    placeholder={`Schritt ${i + 1}...`}
+                    name="recipe-step"
+                    autoComplete="off"
+                    autoCapitalize="sentences"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-form-type="other"
+                    className="flex-1 px-2 py-1.5 bg-surface-2 rounded-lg text-sm border-0 outline-none resize-none"
+                    rows={1}
+                    style={{ overflow: "hidden" }}
+                  />
+                  <button onClick={() => removeStep(i)} className="flex-shrink-0 mt-1">
+                    <X className="w-4 h-4 text-text-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button onClick={addStep} className="text-xs text-accent font-medium flex items-center gap-1 mt-2">
+              <Plus className="w-3 h-3" /> Hinzufügen
+            </button>
           </div>
         </div>
       </div>
+
+      {/* ── Image Source Bottom Sheet ── */}
+      <AnimatePresence>
+        {showImageSheet && (
+          <motion.div
+            className="fixed inset-0 z-[1000]"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={DRAWER_SPRING}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => setShowImageSheet(false)} />
+            <motion.div
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              style={{ background: "var(--surface)", boxShadow: "var(--shadow-elevated)", bottom: editBottomOffset, maxHeight: editVpHeight - 72 }}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={DRAWER_SPRING}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+              </div>
+              <h3 className="text-base font-semibold mb-3">Bild hinzufügen</h3>
+              <div className="flex flex-col gap-2">
+                <button
+                  className="flex items-center gap-3 p-3 rounded-xl bg-surface-2 hover:bg-accent-light transition text-left"
+                  onClick={() => {
+                    setShowImageSheet(false);
+                    fileInputRef.current?.click();
+                  }}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center">
+                    <Camera className="w-5 h-5 text-accent" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-text-1">Foto aufnehmen / aus Galerie</p>
+                    <p className="text-xs text-text-3">Bild direkt hochladen</p>
+                  </div>
+                </button>
+                <button
+                  className="flex items-center gap-3 p-3 rounded-xl bg-surface-2 hover:bg-accent-light transition text-left"
+                  onClick={() => {
+                    setShowImageSheet(false);
+                    setImageUrlDraft(recipe.image_url || "");
+                    setShowUrlInput(true);
+                  }}
+                >
+                  <div className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center">
+                    <ImageIcon className="w-5 h-5 text-accent" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-text-1">URL eingeben</p>
+                    <p className="text-xs text-text-3">Bild-URL direkt einfügen</p>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── URL Input Bottom Sheet ── */}
+      <AnimatePresence>
+        {showUrlInput && (
+          <motion.div
+            className="fixed inset-0 z-[1000]"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={DRAWER_SPRING}
+          >
+            <div className="absolute inset-0 bg-black/40" onClick={() => { setShowUrlInput(false); setImageUrlDraft(""); }} />
+            <motion.div
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              style={{ background: "var(--surface)", boxShadow: "var(--shadow-elevated)", bottom: editBottomOffset, maxHeight: editVpHeight - 72 }}
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={DRAWER_SPRING}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center mb-4">
+                <div className="w-9 h-1 rounded-full" style={{ background: "var(--zu-border)" }} />
+              </div>
+              <h3 className="text-base font-semibold mb-3">Bild-URL eingeben</h3>
+              <input
+                type="search"
+                name="recipe-image-url-input"
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-form-type="other"
+                inputMode="url"
+                placeholder="https://..."
+                value={imageUrlDraft}
+                onChange={(e) => setImageUrlDraft(e.target.value)}
+                className="w-full px-4 py-2.5 bg-surface-2 rounded-xl text-sm border-0 outline-none mb-3"
+                autoFocus
+              />
+              <button
+                disabled={!imageUrlDraft.trim()}
+                onClick={() => {
+                  update({ image_url: imageUrlDraft.trim() || null });
+                  setShowUrlInput(false);
+                  setImageUrlDraft("");
+                }}
+                className="w-full py-2.5 rounded-xl bg-accent text-white text-sm font-medium disabled:opacity-40"
+              >
+                Übernehmen
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1869,7 +2349,7 @@ function IngredientsModal({
 
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {recipe.ingredients.map((ing, i) => (
-            <label key={i} className="flex items-center gap-3 py-2 cursor-pointer">
+            <label key={`ingredient-${i}-${ing.name}`} className="flex items-center gap-3 py-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={selected[i]}
@@ -1877,8 +2357,8 @@ function IngredientsModal({
                 className="w-4 h-4 rounded accent-accent"
               />
               <span className="text-sm text-text-2">
-                {ing.quantity && <span className="font-medium">{ing.quantity} </span>}
-                {ing.unit && <span>{ing.unit} </span>}
+                {ing.quantity ? <span key="qty" className="font-medium">{ing.quantity} </span> : null}
+                {ing.unit ? <span key="unit">{ing.unit} </span> : null}
                 {ing.name}
               </span>
             </label>

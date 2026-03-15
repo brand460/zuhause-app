@@ -124,6 +124,53 @@ export function getAllCategories(): string[] {
   return Array.from(all);
 }
 
+// ── Category chip colors (shared with all screens) ─────────────────
+export const CATEGORY_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  "Obst & Gemüse": { bg: "#DCFCE7", text: "#22C55E", dot: "#22C55E" },
+  Backwaren: { bg: "#FEF3C7", text: "#F59E0B", dot: "#F59E0B" },
+  "Fleisch & Wurst": { bg: "#FCE7F3", text: "#EC4899", dot: "#EC4899" },
+  "Milch & Käse": { bg: "#DBEAFE", text: "#3B82F6", dot: "#3B82F6" },
+  Eier: { bg: "#FEF9C3", text: "#EAB308", dot: "#EAB308" },
+  "Nudeln & Reis": { bg: "#FFF7ED", text: "#F97316", dot: "#F97316" },
+  Konserven: { bg: "#FEE2E2", text: "#EF4444", dot: "#EF4444" },
+  "Saucen & Gewürze": { bg: "#FED7AA", text: "#FB923C", dot: "#FB923C" },
+  "Kaffee & Tee": { bg: "#F3E8FF", text: "#A855F7", dot: "#A855F7" },
+  "Müsli & Frühstück": { bg: "#FFEDD5", text: "#F97316", dot: "#F97316" },
+  Tiefkühl: { bg: "#E0F2FE", text: "#0EA5E9", dot: "#0EA5E9" },
+  "Süßwaren & Snacks": { bg: "#FDF2F8", text: "#EC4899", dot: "#EC4899" },
+  Getränke: { bg: "#ECFDF5", text: "#10B981", dot: "#10B981" },
+  "Haushalt & Reinigung": { bg: "#F3F4F6", text: "#9CA3AF", dot: "#6B7280" },
+  Tiernahrung: { bg: "#FEF3C7", text: "#D97706", dot: "#D97706" },
+  Körperpflege: { bg: "#FCE7F3", text: "#EC4899", dot: "#EC4899" },
+  Haarpflege: { bg: "#F3E8FF", text: "#A855F7", dot: "#A855F7" },
+  Gesichtspflege: { bg: "#FDF2F8", text: "#F472B6", dot: "#F472B6" },
+  "Makeup & Kosmetik": { bg: "#FECDD3", text: "#FB7185", dot: "#FB7185" },
+  Mundhygiene: { bg: "#DBEAFE", text: "#3B82F6", dot: "#3B82F6" },
+  Damenhygiene: { bg: "#FCE7F3", text: "#EC4899", dot: "#EC4899" },
+  Babypflege: { bg: "#FEF9C3", text: "#EAB308", dot: "#EAB308" },
+  Reinigungsmittel: { bg: "#E0F2FE", text: "#0EA5E9", dot: "#0EA5E9" },
+  Waschmittel: { bg: "#ECFDF5", text: "#10B981", dot: "#10B981" },
+  Papierprodukte: { bg: "#F3F4F6", text: "#9CA3AF", dot: "#6B7280" },
+  "Gesundheit & Medizin": { bg: "#DCFCE7", text: "#22C55E", dot: "#22C55E" },
+  "Vitamine & Nahrungsergänzung": { bg: "#FFF7ED", text: "#F97316", dot: "#F97316" },
+  "Foto & Technik": { bg: "#E0E7FF", text: "#6366F1", dot: "#6366F1" },
+  "Lebensmittel & Snacks": { bg: "#FEF3C7", text: "#F59E0B", dot: "#F59E0B" },
+  Elektronik: { bg: "#E0E7FF", text: "#6366F1", dot: "#6366F1" },
+  Haushalt: { bg: "#F3F4F6", text: "#9CA3AF", dot: "#6B7280" },
+  Lebensmittel: { bg: "#DCFCE7", text: "#22C55E", dot: "#22C55E" },
+  "Bücher & Medien": { bg: "#F3E8FF", text: "#A855F7", dot: "#A855F7" },
+  "Sport & Freizeit": { bg: "#ECFDF5", text: "#10B981", dot: "#10B981" },
+  Kleidung: { bg: "#FCE7F3", text: "#EC4899", dot: "#EC4899" },
+  Bürobedarf: { bg: "#FEF9C3", text: "#EAB308", dot: "#EAB308" },
+  Spielzeug: { bg: "#FEF3C7", text: "#F59E0B", dot: "#F59E0B" },
+  Garten: { bg: "#DCFCE7", text: "#22C55E", dot: "#22C55E" },
+  Sonstiges: { bg: "#F1F5F9", text: "#94A3B8", dot: "#94A3B8" },
+};
+
+export function getCategoryChipColor(category: string): { bg: string; text: string; dot: string } {
+  return CATEGORY_COLORS[category] || CATEGORY_COLORS.Sonstiges;
+}
+
 // ── Common German grocery items — expanded ─────────────────────────
 export interface GroceryTemplate {
   name: string;
@@ -867,7 +914,7 @@ export function findGroceryTemplate(name: string, customTemplates?: GroceryTempl
   );
 }
 
-export function searchGroceries(query: string, storeId: string, stores: StoreInfo[], customTemplates?: GroceryTemplate[]): GroceryTemplate[] {
+export function searchGroceries(query: string, storeId: string, stores: StoreInfo[], customTemplates?: GroceryTemplate[], deletedNames?: Set<string>): GroceryTemplate[] {
   if (!query.trim()) return [];
   const q = query.toLowerCase();
   const store = stores.find((s) => s.id === storeId);
@@ -881,12 +928,12 @@ export function searchGroceries(query: string, storeId: string, stores: StoreInf
   if (customTemplates) {
     for (const g of customTemplates) {
       const key = g.name.toLowerCase();
-      if (!seen.has(key)) { seen.add(key); all.push(g); customSet.add(key); }
+      if (!seen.has(key) && !deletedNames?.has(key)) { seen.add(key); all.push(g); customSet.add(key); }
     }
   }
   for (const g of GROCERY_DATABASE) {
     const key = g.name.toLowerCase();
-    if (!seen.has(key)) { seen.add(key); all.push(g); }
+    if (!seen.has(key) && !deletedNames?.has(key)) { seen.add(key); all.push(g); }
   }
 
   // Filter matching items
@@ -972,4 +1019,80 @@ export const STORE_SUGGESTIONS: StoreSuggestion[] = [
 // ── ID generator ───────────────────────────────────────────────────
 export function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+// ── Shared merge helpers ────────────────────────────────────────────
+
+/**
+ * Minimal interface for items coming from the global_items KV store.
+ * Both einkaufen-screen and kochen-screen define their own compatible shapes.
+ */
+export interface GlobalItemBase {
+  name: string;
+  category: string;
+  times_used: number;
+  original_name?: string;
+  deleted?: boolean;
+}
+
+/**
+ * Builds a Set of lowercase names to exclude from GROCERY_DATABASE lookups.
+ * Includes:
+ *  - deleted items' current names + original_names
+ *  - original_names of renamed (non-deleted) items  ← key rename fix
+ *
+ * Pass the result as the `deletedNames` parameter to searchGroceries().
+ */
+export function buildExcludeSet(globalItems: GlobalItemBase[]): Set<string> {
+  const exclude = new Set<string>();
+  for (const item of globalItems) {
+    if (item.deleted) {
+      exclude.add(item.name.toLowerCase());
+      if (item.original_name) exclude.add(item.original_name.toLowerCase());
+    }
+    // Renamed (not deleted): suppress the old GROCERY_DATABASE entry
+    if (item.original_name && !item.deleted) {
+      exclude.add(item.original_name.toLowerCase());
+    }
+  }
+  return exclude;
+}
+
+/**
+ * Returns a correctly merged + deduplicated GroceryTemplate[] from
+ * global_items and GROCERY_DATABASE, handling renames and soft-deletes:
+ *  - Deleted items are never included
+ *  - Renamed items' old GROCERY_DATABASE entry is suppressed (new name wins)
+ *  - global_items come first (sorted by times_used desc), then filtered DB entries
+ */
+export function buildMergedItems(
+  globalItems: GlobalItemBase[],
+  groceryDb: GroceryTemplate[] = GROCERY_DATABASE,
+): GroceryTemplate[] {
+  const exclude = buildExcludeSet(globalItems);
+
+  const seen = new Set<string>();
+  const result: GroceryTemplate[] = [];
+
+  // 1. global_items first, sorted by usage, skipping deleted
+  const sorted = [...globalItems].sort((a, b) => b.times_used - a.times_used);
+  for (const gi of sorted) {
+    if (gi.deleted) continue;
+    const key = gi.name.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push({ name: gi.name, category: gi.category });
+    }
+  }
+
+  // 2. GROCERY_DATABASE entries not suppressed by renames/deletes
+  for (const g of groceryDb) {
+    const key = g.name.toLowerCase();
+    if (!seen.has(key) && !exclude.has(key)) {
+      seen.add(key);
+      result.push(g);
+    }
+  }
+
+  return result;
 }

@@ -62,6 +62,10 @@ import {
   GroceryTemplate,
   GROCERY_DATABASE,
   getAllCategories,
+  buildMergedItems,
+  buildExcludeSet,
+  CATEGORY_COLORS,
+  getCategoryChipColor,
 } from "./shopping-data";
 import { API_BASE, apiFetch } from "../supabase-client";
 import { publicAnonKey } from "/utils/supabase/info";
@@ -195,6 +199,8 @@ interface GlobalItem {
   category: string;
   created_by_household_id: string;
   times_used: number;
+  original_name?: string;
+  deleted?: boolean;
 }
 
 async function fetchGlobalItems(hhId: string): Promise<GlobalItem[]> {
@@ -683,180 +689,6 @@ function StorePopover({
         ))}
       </motion.div>
     </div>
-  );
-}
-
-// ── Category chip colors ───────────────────────────────────────────
-const CATEGORY_COLORS: Record<
-  string,
-  { bg: string; text: string; dot: string }
-> = {
-  "Obst & Gemüse": {
-    bg: "#DCFCE7",
-    text: "#22C55E",
-    dot: "#22C55E",
-  },
-  Backwaren: { bg: "#FEF3C7", text: "#F59E0B", dot: "#F59E0B" },
-  "Fleisch & Wurst": {
-    bg: "#FCE7F3",
-    text: "#EC4899",
-    dot: "#EC4899",
-  },
-  "Milch & Käse": {
-    bg: "#DBEAFE",
-    text: "#3B82F6",
-    dot: "#3B82F6",
-  },
-  Eier: { bg: "#FEF9C3", text: "#EAB308", dot: "#EAB308" },
-  "Nudeln & Reis": {
-    bg: "#FFF7ED",
-    text: "#F97316",
-    dot: "#F97316",
-  },
-  Konserven: { bg: "#FEE2E2", text: "#EF4444", dot: "#EF4444" },
-  "Saucen & Gewürze": {
-    bg: "#FED7AA",
-    text: "#FB923C",
-    dot: "#FB923C",
-  },
-  "Kaffee & Tee": {
-    bg: "#F3E8FF",
-    text: "#A855F7",
-    dot: "#A855F7",
-  },
-  "Müsli & Frühstück": {
-    bg: "#FFEDD5",
-    text: "#F97316",
-    dot: "#F97316",
-  },
-  Tiefkühl: { bg: "#E0F2FE", text: "#0EA5E9", dot: "#0EA5E9" },
-  "Süßwaren & Snacks": {
-    bg: "#FDF2F8",
-    text: "#EC4899",
-    dot: "#EC4899",
-  },
-  Getränke: { bg: "#ECFDF5", text: "#10B981", dot: "#10B981" },
-  "Haushalt & Reinigung": {
-    bg: "#F3F4F6",
-    text: "#9CA3AF",
-    dot: "#6B7280",
-  },
-  Tiernahrung: {
-    bg: "#FEF3C7",
-    text: "#D97706",
-    dot: "#D97706",
-  },
-  Körperpflege: {
-    bg: "#FCE7F3",
-    text: "#EC4899",
-    dot: "#EC4899",
-  },
-  Haarpflege: {
-    bg: "#F3E8FF",
-    text: "#A855F7",
-    dot: "#A855F7",
-  },
-  Gesichtspflege: {
-    bg: "#FDF2F8",
-    text: "#F472B6",
-    dot: "#F472B6",
-  },
-  "Makeup & Kosmetik": {
-    bg: "#FECDD3",
-    text: "#FB7185",
-    dot: "#FB7185",
-  },
-  Mundhygiene: {
-    bg: "#DBEAFE",
-    text: "#3B82F6",
-    dot: "#3B82F6",
-  },
-  Damenhygiene: {
-    bg: "#FCE7F3",
-    text: "#EC4899",
-    dot: "#EC4899",
-  },
-  Babypflege: {
-    bg: "#FEF9C3",
-    text: "#EAB308",
-    dot: "#EAB308",
-  },
-  Reinigungsmittel: {
-    bg: "#E0F2FE",
-    text: "#0EA5E9",
-    dot: "#0EA5E9",
-  },
-  Waschmittel: {
-    bg: "#ECFDF5",
-    text: "#10B981",
-    dot: "#10B981",
-  },
-  Papierprodukte: {
-    bg: "#F3F4F6",
-    text: "#9CA3AF",
-    dot: "#6B7280",
-  },
-  "Gesundheit & Medizin": {
-    bg: "#DCFCE7",
-    text: "#22C55E",
-    dot: "#22C55E",
-  },
-  "Vitamine & Nahrungsergänzung": {
-    bg: "#FFF7ED",
-    text: "#F97316",
-    dot: "#F97316",
-  },
-  "Foto & Technik": {
-    bg: "#E0E7FF",
-    text: "#6366F1",
-    dot: "#6366F1",
-  },
-  "Lebensmittel & Snacks": {
-    bg: "#FEF3C7",
-    text: "#F59E0B",
-    dot: "#F59E0B",
-  },
-  Elektronik: {
-    bg: "#E0E7FF",
-    text: "#6366F1",
-    dot: "#6366F1",
-  },
-  Haushalt: { bg: "#F3F4F6", text: "#9CA3AF", dot: "#6B7280" },
-  Lebensmittel: {
-    bg: "#DCFCE7",
-    text: "#22C55E",
-    dot: "#22C55E",
-  },
-  "Bücher & Medien": {
-    bg: "#F3E8FF",
-    text: "#A855F7",
-    dot: "#A855F7",
-  },
-  "Sport & Freizeit": {
-    bg: "#ECFDF5",
-    text: "#10B981",
-    dot: "#10B981",
-  },
-  Kleidung: { bg: "#FCE7F3", text: "#EC4899", dot: "#EC4899" },
-  Bürobedarf: {
-    bg: "#FEF9C3",
-    text: "#EAB308",
-    dot: "#EAB308",
-  },
-  Spielzeug: { bg: "#FEF3C7", text: "#F59E0B", dot: "#F59E0B" },
-  Garten: { bg: "#DCFCE7", text: "#22C55E", dot: "#22C55E" },
-  Sonstiges: { bg: "#F1F5F9", text: "#94A3B8", dot: "#94A3B8" },
-};
-
-function getCategoryChipColor(category: string): {
-  bg: string;
-  text: string;
-  dot: string;
-} {
-  return (
-    CATEGORY_COLORS[category] || {
-      ...CATEGORY_COLORS.Sonstiges,
-    }
   );
 }
 
@@ -2446,11 +2278,35 @@ function AddItemBar({
   };
 
   useEffect(() => {
-    const suggestions = getQuickSuggestions(storeId).filter(
-      (s) => !existingNames.has(s),
-    );
+    // Build rename map: lowerOriginalName → newName (for non-deleted renamed items)
+    const renameMap = new Map<string, string>();
+    // Build delete set: lowercase names of deleted items (name + original_name)
+    const deletedSet = new Set<string>();
+    for (const gi of globalItems) {
+      if (gi.deleted) {
+        deletedSet.add(gi.name.toLowerCase());
+        if (gi.original_name) deletedSet.add(gi.original_name.toLowerCase());
+      } else if (gi.original_name) {
+        renameMap.set(gi.original_name.toLowerCase(), gi.name);
+      }
+    }
+
+    const suggestions = getQuickSuggestions(storeId)
+      .filter((s) => !deletedSet.has(s.toLowerCase()))
+      .map((s) => renameMap.get(s.toLowerCase()) ?? s)
+      // After remapping, deduplicate and filter out already-existing items
+      .filter((s, idx, arr) => arr.indexOf(s) === idx && !existingNames.has(s));
+
     setQuickChips(suggestions);
-  }, [storeId, existingNames]);
+  }, [storeId, existingNames, globalItems]);
+
+  // Build exclusion set for searchGroceries: covers deleted items AND renamed items'
+  // original names so GROCERY_DATABASE entries are suppressed when a global_item
+  // has been renamed (e.g. "Milch" → "Bio-Milch" hides "Milch" from DB results).
+  const deletedNames = useMemo(
+    () => buildExcludeSet(globalItems),
+    [globalItems],
+  );
 
   const searchResults = useMemo(() => {
     if (!query.trim()) return [];
@@ -2459,8 +2315,9 @@ function AddItemBar({
       storeId,
       stores,
       customTemplates,
+      deletedNames,
     ).filter((g) => !existingNames.has(g.name));
-  }, [query, storeId, stores, existingNames, customTemplates]);
+  }, [query, storeId, stores, existingNames, customTemplates, deletedNames]);
 
   const handleSelect = (
     name: string,
@@ -2546,7 +2403,10 @@ function AddItemBar({
             }}
           >
             {quickChips.map((chip) => {
-              const chipCategory = findGroceryTemplate(chip, customTemplates)?.category || "Sonstiges";
+              const chipCategory =
+                findGroceryTemplate(chip, customTemplates)?.category ||
+                globalItems.find((g) => !g.deleted && g.name.toLowerCase() === chip.toLowerCase())?.category ||
+                "Sonstiges";
               const chipColor = getCategoryChipColor(chipCategory);
               return (
                 <button
@@ -3558,39 +3418,22 @@ export function EinkaufenScreen({
   }, [stores]);
 
   const customTemplates = useMemo(() => {
-    const dbNames = new Set(
-      GROCERY_DATABASE.map((g) => g.name.toLowerCase()),
-    );
-    const seen = new Set<string>();
-    const templates: GroceryTemplate[] = [];
+    // buildMergedItems correctly handles renames and soft-deletes:
+    // renamed items' old GROCERY_DATABASE entries are suppressed,
+    // new names from global_items take priority.
+    const merged = buildMergedItems(globalItems);
+    const mergedNames = new Set(merged.map((m) => m.name.toLowerCase()));
 
-    // Add global items first (sorted by times_used desc for priority)
-    const sortedGlobal = [...globalItems].sort(
-      (a, b) => b.times_used - a.times_used,
-    );
-    for (const gi of sortedGlobal) {
-      const key = gi.name.toLowerCase();
-      if (!dbNames.has(key) && !seen.has(key)) {
-        seen.add(key);
-        templates.push({
-          name: gi.name,
-          category: gi.category,
-        });
-      }
-    }
-
-    // Also add from current items list (catch any not yet in global)
+    // Also include items from the current shopping list that aren't covered yet
+    // (e.g. items added before global_items synced)
+    const extra: GroceryTemplate[] = [];
     for (const item of items) {
       const key = item.name.toLowerCase();
-      if (!dbNames.has(key) && !seen.has(key)) {
-        seen.add(key);
-        templates.push({
-          name: item.name,
-          category: item.category,
-        });
+      if (!mergedNames.has(key)) {
+        extra.push({ name: item.name, category: item.category });
       }
     }
-    return templates;
+    return [...merged, ...extra];
   }, [items, globalItems]);
 
   // ── Handlers ───────────────────────────────────────────────────
@@ -3845,6 +3688,33 @@ export function EinkaufenScreen({
       ),
     );
   }, [selectedStore, updateItems]);
+
+  // ── "Liste leeren" — löscht ALLE Items haushaltsweit und persistiert sofort ──
+  const handleClearAll = useCallback(async () => {
+    // 1. Lokalen State sofort leeren
+    lastLocalChangeRef.current = Date.now();
+    setItems([]);
+    // Laufenden Debounce-Save abbrechen, damit er keine veralteten Daten schickt
+    if (saveTimeout.current) {
+      clearTimeout(saveTimeout.current);
+      saveTimeout.current = undefined;
+    }
+    // 2. Sofort und robust via apiFetch persistieren (Retry-Logik + Token-Refresh)
+    if (!householdId) return;
+    try {
+      await apiFetch("/shopping", {
+        method: "PUT",
+        body: JSON.stringify({
+          household_id: householdId,
+          items: [],
+        }),
+      });
+      broadcastChange([`shopping:${householdId}`]);
+      console.log("[Einkaufen] Liste erfolgreich geleert (KV-Store).");
+    } catch (err) {
+      console.log("[Einkaufen] Fehler beim Leeren der Liste:", err);
+    }
+  }, [householdId]);
 
   const handleDeleteItem = useCallback(
     (itemId: string) => {
@@ -4665,11 +4535,11 @@ export function EinkaufenScreen({
             </p>
             
             <button
-              onClick={handleClearChecked}
+              onClick={handleClearAll}
               className="mt-4 flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-dark active:scale-95 transition"
             >
               <Trash2 className="w-4 h-4" />
-              Liste bereinigen
+              Liste leeren
             </button>
           </div>
         ) : null}

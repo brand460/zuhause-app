@@ -18,6 +18,7 @@ interface GlobalItem {
   created_by_household_id: string;
   times_used: number;
   original_name?: string;
+  deleted?: boolean;
 }
 
 interface ShoppingItem {
@@ -63,7 +64,7 @@ async function fetchShoppingItems(hhId: string): Promise<ShoppingItem[]> {
   }
 }
 
-async function upsertGlobalItem(hhId: string, name: string, category: string, categoryOnly = false): Promise<void> {
+async function upsertGlobalItem(hhId: string, name: string, category: string, categoryOnly = false, extra?: { deleted?: boolean; original_name?: string }): Promise<void> {
   try {
     await fetch(`${API_BASE}/global-items`, {
       method: "PUT",
@@ -71,7 +72,7 @@ async function upsertGlobalItem(hhId: string, name: string, category: string, ca
         "Content-Type": "application/json",
         Authorization: `Bearer ${publicAnonKey}`,
       },
-      body: JSON.stringify({ household_id: hhId, name, category, category_only: categoryOnly }),
+      body: JSON.stringify({ household_id: hhId, name, category, category_only: categoryOnly, ...extra }),
     });
   } catch (err) {
     console.log("upsertGlobalItem error:", err);
@@ -243,27 +244,54 @@ export function MeineArtikelScreen({ onClose }: { onClose: () => void }) {
 
       const map = new Map<string, MergedArticle>();
 
-      // ── Schritt 1 & 2: Dedup-Sets aus global_items aufbauen ─────────
-      // Step 1 (nach name):          GROCERY_DATABASE-Einträge überspringen,
-      //                              deren Name identisch mit einem global_items-Eintrag ist.
-      // Step 2 (nach original_name): GROCERY_DATABASE-Einträge überspringen,
-      //                              die via original_name als umbenannt markiert sind
-      //                              (z.B. original_name="Milch", name="Milch Bio").
+      // ── Fix 2: global_items zuerst deduplizieren ───────────────────────
+      // Wenn mehrere Einträge denselben Namen haben, gewinnt der letzte
+      // (= neueste Schreiboperation). Verhindert Ghost-Duplikate nach
+      // Umbenennungs-/Lösch-Zyklen.
+      const deduplicatedGlobalItems: GlobalItem[] = [];
+      {
+        const seenNames = new Set<string>();
+        for (let i = globalItems.length - 1; i >= 0; i--) {
+          const key = globalItems[i].name.toLowerCase();
+          if (!seenNames.has(key)) {
+            seenNames.add(key);
+            deduplicatedGlobalItems.unshift(globalItems[i]);
+          }
+        }
+      }
+
+      // ── Schritt 1, 2 & 3: Dedup-Sets aus global_items aufbauen ─────────
+      // Fix 3: globalNames und renamedOriginals nur für NICHT-gelöschte Einträge befüllen.
+      // Andernfalls würde ein {name:"Eier", deleted:true} den GROCERY-Eintrag "Eier"
+      // per globalNames blockieren UND den global_items-Loop überspringen → komplett unsichtbar.
+      //
+      // deletedOriginals bleibt für alle gelöschten Einträge erhalten: verhindert, dass
+      // ein umbenannter GROCERY-Originalname nach dem Löschen wieder auftaucht.
       const globalNames = new Set<string>();
       const renamedOriginals = new Set<string>();
-      for (const gi of globalItems) {
-        globalNames.add(gi.name.toLowerCase());
-        if (gi.original_name) {
-          renamedOriginals.add(gi.original_name.toLowerCase());
+      const deletedOriginals = new Set<string>();
+      for (const gi of deduplicatedGlobalItems) {
+        if (!gi.deleted) {
+          // Nur aktive Einträge blockieren GROCERY-Artikel
+          globalNames.add(gi.name.toLowerCase());
+          if (gi.original_name) {
+            renamedOriginals.add(gi.original_name.toLowerCase());
+          }
+        }
+        // Gelöschte Einträge: original_name merken, damit ihr GROCERY-Original weiterhin
+        // unterdrückt bleibt (der User hat es explizit gelöscht)
+        if (gi.deleted && gi.original_name) {
+          deletedOriginals.add(gi.original_name.toLowerCase());
         }
       }
 
       // GROCERY_DATABASE — nur hinzufügen wenn weder name (Step 1) noch original_name
-      // (Step 2) eines global_items-Eintrags übereinstimmt
+      // (Step 2/3) eines global_items-Eintrags übereinstimmt
       for (const g of GROCERY_DATABASE) {
         const key = g.name.toLowerCase();
         if (globalNames.has(key)) continue;       // Step 1: gleicher Name → global_items gewinnt
         if (renamedOriginals.has(key)) continue;  // Step 2: umbenannt → neuer Name gewinnt
+        if (deletedOriginals.has(key)) continue;  // Step 3: soft-deleted → überspringen
         map.set(key, {
           name: g.name,
           category: g.category,
@@ -272,8 +300,9 @@ export function MeineArtikelScreen({ onClose }: { onClose: () => void }) {
         });
       }
 
-      // global_items — immer eintragen (GROCERY_DATABASE wurde oben bereits dedupliziert)
-      for (const gi of globalItems) {
+      // global_items — nur eintragen wenn nicht gelöscht
+      for (const gi of deduplicatedGlobalItems) {
+        if (gi.deleted) continue; // deleted-Einträge nie anzeigen
         const key = gi.name.toLowerCase();
         map.set(key, {
           name: gi.name,
@@ -512,7 +541,17 @@ export function MeineArtikelScreen({ onClose }: { onClose: () => void }) {
   // ── Delete ─────────────────────────────────────────────────────
   const handleDelete = useCallback(async () => {
     if (!householdId || !deleteArticle) return;
-    await deleteGlobalItem(householdId, deleteArticle.name);
+    if (deleteArticle.source === "grocery") {
+      // Soft-delete: create a global_items entry with deleted: true
+      // so the GROCERY_DATABASE item gets filtered out in the merge
+      await upsertGlobalItem(householdId, deleteArticle.name, deleteArticle.category, true, {
+        deleted: true,
+        original_name: deleteArticle.name,
+      });
+    } else {
+      // Hard-delete existing global_items entry (source === "global" or "shopping")
+      await deleteGlobalItem(householdId, deleteArticle.name);
+    }
     setDeleteArticle(null);
     reload();
   }, [householdId, deleteArticle, reload]);

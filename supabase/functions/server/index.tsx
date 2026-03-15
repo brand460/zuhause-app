@@ -293,27 +293,58 @@ app.get("/make-server-2a26506b/global-items", async (c) => {
 // PUT — upsert a global item (create or increment times_used)
 app.put("/make-server-2a26506b/global-items", async (c) => {
   try {
-    const { household_id, name, category, category_only } = await c.req.json();
+    const { household_id, name, category, category_only, deleted, original_name } = await c.req.json();
     if (!household_id || !name || !category) {
       return c.json({ error: "household_id, name und category sind erforderlich." }, 400);
     }
     const key = `global_items:${household_id}`;
     const existing: any[] = (await withRetry(() => kv.get(key))) || [];
-    const idx = existing.findIndex(
+
+    // 1. Find by name (case-insensitive) — regardless of deleted flag
+    let idx = existing.findIndex(
       (it: any) => it.name.toLowerCase() === name.toLowerCase()
     );
+
+    // 2. If not found by name, find by original_name — regardless of deleted flag.
+    //    Covers renamed+deleted entries:
+    //      e.g. "Eier (10er)" renamed → "Eier", then deleted.
+    //      Entry: {name:"Eier", deleted:true, original_name:"Eier (10er)"}
+    //      User recreates "Eier (10er)" → original_name matches → revive.
+    if (idx < 0) {
+      idx = existing.findIndex(
+        (it: any) =>
+          it.original_name &&
+          it.original_name.toLowerCase() === name.toLowerCase()
+      );
+    }
+
     if (idx >= 0) {
       if (!category_only) {
-        existing[idx].times_used = (existing[idx].times_used || 1) + 1;
+        // Complete overwrite: fresh state — no deleted flag, no stale original_name.
+        // This fixes the ghost-entry bug where a deleted/renamed entry keeps blocking
+        // the article from appearing in the merged article list.
+        existing[idx] = {
+          name,
+          category,
+          created_by_household_id: existing[idx].created_by_household_id || household_id,
+          times_used: Math.max(1, (existing[idx].times_used || 0) + 1),
+        };
+      } else {
+        // category_only = true → preserve existing fields, only update category/flags
+        existing[idx].category = category;
+        if (deleted !== undefined) existing[idx].deleted = deleted;
+        if (original_name !== undefined) existing[idx].original_name = original_name;
       }
-      existing[idx].category = category; // update category if changed
     } else {
-      existing.push({
+      const entry: any = {
         name,
         category,
         created_by_household_id: household_id,
         times_used: 1,
-      });
+      };
+      if (deleted !== undefined) entry.deleted = deleted;
+      if (original_name !== undefined) entry.original_name = original_name;
+      existing.push(entry);
     }
     await withRetry(() => kv.set(key, existing));
     return c.json({ ok: true, items: existing });
@@ -1314,6 +1345,73 @@ app.post("/make-server-2a26506b/send-notifications", async (c) => {
   } catch (err) {
     console.log("POST /send-notifications error:", err);
     return c.json({ error: `Fehler beim Senden der Benachrichtigungen: ${err}` }, 500);
+  }
+});
+
+// ── Ensure recipe-images bucket exists (idempotent) ──────────────
+let _bucketInitPromise: Promise<void> | null = null;
+async function ensureRecipeImagesBucket() {
+  if (!_bucketInitPromise) {
+    _bucketInitPromise = (async () => {
+      try {
+        const sb = supabaseAdmin();
+        const { data: buckets } = await sb.storage.listBuckets();
+        const bucketExists = buckets?.some((b: any) => b.name === "recipe-images");
+        if (!bucketExists) {
+          await sb.storage.createBucket("recipe-images", { public: true });
+          console.log("Created recipe-images bucket");
+        }
+      } catch (err) {
+        console.log("ensureRecipeImagesBucket error:", err);
+        _bucketInitPromise = null; // retry next time
+      }
+    })();
+  }
+  return _bucketInitPromise;
+}
+
+// POST — upload recipe image
+app.post("/make-server-2a26506b/recipe-image-upload", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) return c.json({ error: "Nicht autorisiert" }, 401);
+
+    await ensureRecipeImagesBucket();
+
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File | null;
+    const householdId = formData.get("household_id") as string | null;
+    const recipeId = formData.get("recipe_id") as string | null;
+
+    if (!file || !householdId || !recipeId) {
+      return c.json({ error: "file, household_id und recipe_id sind erforderlich." }, 400);
+    }
+
+    const arrayBuf = await file.arrayBuffer();
+    const fileName = `${householdId}/${recipeId}.jpg`;
+
+    const sb = supabaseAdmin();
+    const { error: uploadError } = await sb.storage
+      .from("recipe-images")
+      .upload(fileName, arrayBuf, {
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.log("Recipe image upload error:", uploadError);
+      return c.json({ error: `Upload fehlgeschlagen: ${uploadError.message}` }, 500);
+    }
+
+    const { data: urlData } = sb.storage
+      .from("recipe-images")
+      .getPublicUrl(fileName);
+
+    const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+    return c.json({ url: publicUrl });
+  } catch (err) {
+    console.log("POST /recipe-image-upload error:", err);
+    return c.json({ error: `Fehler beim Hochladen des Rezeptbilds: ${err}` }, 500);
   }
 });
 
