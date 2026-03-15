@@ -13,6 +13,8 @@ export interface CalendarEvent {
   all_day: boolean;
   description: string;
   color: EventColor;
+  label_id?: string; // references CalendarLabel.id — preferred over `color` for rendering
+  label_hex?: string; // cached hex from the label at save time — used for pill rendering
   repeat_rule: RepeatRule;
   end_repeat_date?: string; // ISO date string – recurring events stop after this date
   notification_minutes: NotificationMinutes; // kept for backward compat
@@ -87,6 +89,16 @@ export function getColorHex(color: EventColor): string {
 
 export function getColorBg(color: EventColor): string {
   return EVENT_COLORS.find((c) => c.id === color)?.bg || "#FFF7ED";
+}
+
+/** Resolve the display hex for an event: prefer live label lookup by label_id, then cached label_hex, then fall back to EventColor hex */
+export function resolveEventHex(ev: CalendarEvent, labels: CalendarLabel[]): string {
+  if (ev.label_id) {
+    const label = labels.find((l) => l.id === ev.label_id);
+    if (label) return label.hex;
+  }
+  if (ev.label_hex) return ev.label_hex;
+  return getColorHex(ev.color);
 }
 
 // ── Household members / Avatars ────────────────────────────────────

@@ -10,7 +10,7 @@ export const supabase: ReturnType<typeof createClient> =
   ((globalThis as any)[GLOBAL_KEY] = createClient(supabaseUrl, publicAnonKey, {
     auth: {
       persistSession: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false, // OAuthCallbackHandler übernimmt als einziger den exchangeCodeForSession-Aufruf
       autoRefreshToken: true,
     },
   }));

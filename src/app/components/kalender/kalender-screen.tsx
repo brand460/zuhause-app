@@ -37,7 +37,9 @@ import {
   HouseholdMember,
   generateId,
   getColorHex,
+  resolveEventHex,
 } from "./calendar-types";
+import { LabelManagerScreen } from "./label-manager-screen";
 import { useAuth } from "../auth-context";
 import { useKeyboardOffset } from "../ui/use-keyboard-offset";
 import { type Holiday, getHolidaysForYears } from "./german-holidays";
@@ -300,11 +302,12 @@ interface MonthGridProps {
   highlightMonth: number;
   today: Date;
   isDark: boolean;
+  labels: CalendarLabel[];
   onDayClick: (date: Date) => void;
   holidayMap: Map<string, Holiday[]>;
 }
 
-const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightMonth, today, isDark, onDayClick, holidayMap }: MonthGridProps) {
+const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightMonth, today, isDark, labels, onDayClick, holidayMap }: MonthGridProps) {
   const { weeks, weekBands, cellSingleEvents, cellAllEvents } = data;
   return (
     // height: 100% fills the track panel height set by the outer grid container
@@ -336,7 +339,8 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
               }}
             >
             {bands.map((seg) => {
-              const pillStyle = getEventPillStyle(seg.event.color, isDark);
+              const evHex = resolveEventHex(seg.event, labels);
+              const pillStyle = getEventPillStyleFromHex(evHex, isDark);
               const sMid = dateMidnight(new Date(seg.event.start_time));
               const eMid = dateMidnight(new Date(seg.event.end_time));
               const isStart = toDateKey(sMid) >= toDateKey(week[0].date);
@@ -379,7 +383,7 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
               for (const ev of visibleSingle) visibleIds.add(ev.id);
               const hiddenEvents = allEvents.filter((ev) => !visibleIds.has(ev.id));
               const hiddenCount = hiddenEvents.length;
-              const hiddenColors = [...new Set(hiddenEvents.map((ev) => ev.color))];
+              const hiddenHexes = [...new Set(hiddenEvents.map((ev) => resolveEventHex(ev, labels)))];
               const cellHoliday = inMonth ? (holidayMap.get(key)?.[0] ?? null) : null;
               return (
                 <button
@@ -421,7 +425,8 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
                   {visibleSingle.length > 0 && (
                     <div className="w-full flex flex-col gap-px absolute left-0 right-0" style={{ top: DAY_NUM_HEIGHT + bandAreaHeight }}>
                       {visibleSingle.map((ev) => {
-                        const pillStyle = getEventPillStyle(ev.color, isDark);
+                        const evHex = resolveEventHex(ev, labels);
+                        const pillStyle = getEventPillStyleFromHex(evHex, isDark);
                         return (
                           <div
                             key={ev.id}
@@ -445,8 +450,8 @@ const MonthGrid = React.memo(function MonthGrid({ data, selectedDate, highlightM
                       }}
                     >
                       <span className="text-[9px] font-semibold leading-none flex-shrink-0" style={{ color: "var(--color-accent)" }}>+{hiddenCount}</span>
-                      {hiddenColors.slice(0, 3).map((c) => (
-                        <div key={c} className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: getColorHex(c) }} />
+                      {hiddenHexes.slice(0, 3).map((hex) => (
+                        <div key={hex} className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: hex }} />
                       ))}
                     </div>
                   )}
@@ -469,29 +474,35 @@ function mixWithWhite(hex: string, ratio: number): string {
   return `rgb(${Math.round(255 * (1 - ratio) + r * ratio)},${Math.round(255 * (1 - ratio) + g * ratio)},${Math.round(255 * (1 - ratio) + b * ratio)})`;
 }
 
-function getEventPillStyle(color: EventColor, isDark: boolean): { bg: string; text: string } {
-  const lightMap: Record<EventColor, { bg: string; text: string }> = {
-    orange: { bg: "rgba(249,115,22,0.15)", text: "#EA580C" },
-    blue:   { bg: "rgba(59,130,246,0.15)",  text: "#2563EB" },
-    green:  { bg: "rgba(34,197,94,0.15)",   text: "#16A34A" },
-    red:    { bg: "rgba(239,68,68,0.15)",   text: "#DC2626" },
-    purple: { bg: "rgba(139,92,246,0.15)",  text: "#7C3AED" },
-    gray:   { bg: "rgba(107,114,128,0.15)", text: "#4B5563" },
-  };
-  const darkHex: Record<EventColor, string> = {
-    orange: "#F97316", blue: "#3B82F6", green: "#22C55E",
-    red: "#EF4444", purple: "#8B5CF6", gray: "#6B7280",
-  };
-  const darkBg: Record<EventColor, string> = {
-    orange: "rgba(249,115,22,0.28)", blue: "rgba(59,130,246,0.28)",
-    green: "rgba(34,197,94,0.28)", red: "rgba(239,68,68,0.28)",
-    purple: "rgba(139,92,246,0.28)", gray: "rgba(107,114,128,0.28)",
-  };
+/** Generate pill style from any hex color */
+function getEventPillStyleFromHex(hex: string, isDark: boolean): { bg: string; text: string } {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
   if (isDark) {
-    const hex = darkHex[color] ?? darkHex.orange;
-    return { bg: darkBg[color] ?? darkBg.orange, text: mixWithWhite(hex, 0.15) };
+    return {
+      bg: `rgba(${r},${g},${b},0.28)`,
+      text: mixWithWhite(hex, 0.15),
+    };
   }
-  return lightMap[color] ?? lightMap.orange;
+  // Light mode: 15% opacity background, darkened text
+  return {
+    bg: `rgba(${r},${g},${b},0.15)`,
+    text: darkenHex(hex, 0.2),
+  };
+}
+
+/** Darken a hex color by mixing with black */
+function darkenHex(hex: string, amount: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgb(${Math.round(r * (1 - amount))},${Math.round(g * (1 - amount))},${Math.round(b * (1 - amount))})`;
+}
+
+/** Legacy: generate pill style from EventColor (backward compat) */
+function getEventPillStyle(color: EventColor, isDark: boolean): { bg: string; text: string } {
+  return getEventPillStyleFromHex(getColorHex(color), isDark);
 }
 
 // ── useIsDesktop hook ──────────────────────────────────────────────
@@ -589,6 +600,35 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
     }
   }, [householdId]);
 
+  const handleLabelsChange = useCallback(async (newLabels: CalendarLabel[], eventUpdates?: { eventId: string; label_id: string; label_hex: string; color: EventColor }[]) => {
+    setLabels(newLabels);
+
+    // If labels were deleted, reassign affected events
+    if (eventUpdates && eventUpdates.length > 0) {
+      setEvents((prev) => {
+        const updated = prev.map((e) => {
+          const update = eventUpdates.find((u) => u.eventId === e.id);
+          if (update) {
+            return { ...e, label_id: update.label_id, label_hex: update.label_hex, color: update.color };
+          }
+          return e;
+        });
+        saveEvents(updated);
+        return updated;
+      });
+    }
+
+    try {
+      broadcastChange([`calendar_labels:${householdId}`]);
+      await apiFetch("/calendar-labels", {
+        method: "PUT",
+        body: JSON.stringify({ household_id: householdId, labels: newLabels }),
+      });
+    } catch (err) {
+      console.error("Fehler beim Speichern der Kalender-Labels:", err);
+    }
+  }, [householdId, saveEvents]);
+
   const reloadAll = useCallback(() => {
     loadEvents();
     loadLabels();
@@ -660,6 +700,8 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
     const endDate = new Date(startDate);
     endDate.setHours(13, 0, 0, 0);
 
+    // Use first label as default for new events
+    const defaultLabel = labels[0];
     setEditingEvent({
       id: "",
       household_id: householdId || "",
@@ -668,7 +710,9 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
       end_time: endDate.toISOString(),
       all_day: false,
       description: "",
-      color: "orange",
+      color: defaultLabel?.color || "orange",
+      label_id: defaultLabel?.id,
+      label_hex: defaultLabel?.hex,
       repeat_rule: "none",
       notification_minutes: 0,
       notifications: [],
@@ -726,6 +770,8 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
           all_day: ev.all_day,
           description: ev.description,
           color: ev.color,
+          label_id: ev.label_id,
+          label_hex: ev.label_hex,
           notification_minutes: ev.notification_minutes,
           notifications: ev.notifications,
           linked_page_ids: ev.linked_page_ids,
@@ -761,6 +807,8 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
               all_day: ev.all_day,
               description: ev.description,
               color: ev.color,
+              label_id: ev.label_id,
+              label_hex: ev.label_hex,
               notification_minutes: ev.notification_minutes,
               notifications: ev.notifications,
               assigned_to: ev.assigned_to,
@@ -1001,6 +1049,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
               highlightMonth={prevMonth}
               today={today}
               isDark={isDark}
+              labels={labels}
               onDayClick={handleDayClick}
               holidayMap={holidayMap}
             />
@@ -1010,6 +1059,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
               highlightMonth={currentMonth}
               today={today}
               isDark={isDark}
+              labels={labels}
               onDayClick={handleDayClick}
               holidayMap={holidayMap}
             />
@@ -1019,6 +1069,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
               highlightMonth={nextMonth}
               today={today}
               isDark={isDark}
+              labels={labels}
               onDayClick={handleDayClick}
               holidayMap={holidayMap}
             />
@@ -1116,7 +1167,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
                     className="w-full flex items-stretch bg-surface rounded-xl overflow-hidden transition active:scale-[0.98]"
                     style={{ boxShadow: "var(--shadow-card)" }}
                   >
-                    <div className="w-1.5 flex-shrink-0" style={{ backgroundColor: getColorHex(ev.color) }} />
+                    <div className="w-1.5 flex-shrink-0" style={{ backgroundColor: resolveEventHex(ev, labels) }} />
                     <div className="flex-1 flex items-center gap-3 px-3 py-2.5 min-w-0">
                       <div className="flex-shrink-0 text-xs text-text-3 w-12 text-right">
                         {ev.all_day ? (
@@ -1183,6 +1234,7 @@ export function KalenderScreen({ onNavigate }: { onNavigate?: (tab: string, item
             onAutoSave={handleAutoSaveEvent}
             onDelete={editingEvent.id ? (mode: "all" | "single" | "future", dateKey?: string) => handleDeleteEvent(editingEvent.id, mode, dateKey) : undefined}
             onNavigate={onNavigate}
+            onLabelsChange={handleLabelsChange}
             onClose={() => {
               setShowEditor(false);
               setEditingEvent(null);
@@ -2134,6 +2186,7 @@ function EventEditorSheet({
   onAutoSave,
   onDelete,
   onNavigate,
+  onLabelsChange,
   onClose,
 }: {
   event: CalendarEvent;
@@ -2144,6 +2197,7 @@ function EventEditorSheet({
   onAutoSave: (ev: CalendarEvent) => void;
   onDelete?: (mode: "all" | "single" | "future", dateKey?: string) => void;
   onNavigate?: (tab: string, itemId?: string | null) => void;
+  onLabelsChange?: (labels: CalendarLabel[], eventUpdates?: { eventId: string; label_id: string; label_hex: string; color: EventColor }[]) => void;
   onClose: () => void;
 }) {
   const { householdId, user } = useAuth();
@@ -2153,6 +2207,8 @@ function EventEditorSheet({
   const [allDay, setAllDay] = useState(event.all_day);
   const [repeatRule, setRepeatRule] = useState<RepeatRule>(event.repeat_rule);
   const [color, setColor] = useState<EventColor>(event.color);
+  const [labelId, setLabelId] = useState<string | undefined>(event.label_id);
+  const [labelHex, setLabelHex] = useState<string | undefined>(event.label_hex);
   const [description, setDescription] = useState(event.description);
   const [notifications, setNotifications] = useState<number[]>(() => {
     if (event.notifications?.length) return [...event.notifications];
@@ -2203,6 +2259,7 @@ function EventEditorSheet({
   const [showNotePickerDrawer, setShowNotePickerDrawer] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [showLabelManager, setShowLabelManager] = useState(false);
 
   const { bottomOffset: editorBottomOffset, vpHeight } = useKeyboardOffset();
   const drawerMaxHeight = vpHeight - 72;
@@ -2217,6 +2274,7 @@ function EventEditorSheet({
   useBackHandler(showNotePickerDrawer, () => setShowNotePickerDrawer(false));
   useBackHandler(showDeleteConfirm, () => setShowDeleteConfirm(false));
   useBackHandler(showDiscardConfirm, () => setShowDiscardConfirm(false));
+  useBackHandler(showLabelManager, () => setShowLabelManager(false));
 
   // ── Pages for note linking ─────────────────────────────────────
   interface LinkedPage { id: string; title: string; icon: string; parent_id: string | null; position: number; }
@@ -2252,6 +2310,8 @@ function EventEditorSheet({
     start_time: string;
     end_time: string;
     color: EventColor;
+    label_id?: string;
+    label_hex?: string;
     description: string;
     notifications: number[];
     notification_minutes: NotificationMinutes;
@@ -2299,6 +2359,8 @@ function EventEditorSheet({
           start_time: ev.start_time,
           end_time: ev.end_time,
           color: ev.color,
+          label_id: ev.label_id,
+          label_hex: ev.label_hex,
           description: ev.description,
           notifications: ev.notifications || (ev.notification_minutes > 0 ? [ev.notification_minutes] : []),
           notification_minutes: ev.notification_minutes,
@@ -2330,6 +2392,8 @@ function EventEditorSheet({
     setEndTime(newEnd.toISOString());
     setAllDay(s.all_day);
     setColor(s.color);
+    setLabelId(s.label_id);
+    setLabelHex(s.label_hex);
     setDescription(s.description);
     setNotifications(s.notifications);
     if (s.assigned_to) setAssignedTo(s.assigned_to);
@@ -2369,6 +2433,8 @@ function EventEditorSheet({
       all_day: allDay,
       repeat_rule: repeatRule,
       color,
+      label_id: labelId,
+      label_hex: labelHex,
       description,
       notification_minutes: (notifications[0] ?? 0) as NotificationMinutes,
       notifications,
@@ -2380,11 +2446,11 @@ function EventEditorSheet({
       linked_recipe_ids: linkedRecipeIds,
       checklist: checklist.length > 0 ? checklist : undefined,
     };
-  }, [event, title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageIds, linkedRecipeIds, checklist]);
+  }, [event, title, startTime, endTime, allDay, repeatRule, color, labelId, labelHex, description, notifications, assignedTo, linkedPageIds, linkedRecipeIds, checklist]);
 
   const formSnapshot = useMemo(
-    () => JSON.stringify({ title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageIds, linkedRecipeIds, checklist }),
-    [title, startTime, endTime, allDay, repeatRule, color, description, notifications, assignedTo, linkedPageIds, linkedRecipeIds, checklist]
+    () => JSON.stringify({ title, startTime, endTime, allDay, repeatRule, color, labelId, labelHex, description, notifications, assignedTo, linkedPageIds, linkedRecipeIds, checklist }),
+    [title, startTime, endTime, allDay, repeatRule, color, labelId, labelHex, description, notifications, assignedTo, linkedPageIds, linkedRecipeIds, checklist]
   );
 
   useEffect(() => {
@@ -2434,7 +2500,9 @@ function EventEditorSheet({
     setNotifications(notifications.filter((n) => n !== minutes));
   };
 
-  const currentLabel = labels.find((l) => l.color === color);
+  const currentLabel = labelId
+    ? labels.find((l) => l.id === labelId)
+    : labels.find((l) => l.color === color);
   const repeatLabel = REPEAT_OPTIONS.find((r) => r.value === repeatRule)?.label || "Keine";
 
   // ── Avatar assignment helpers ───────────────────────────────────
@@ -2700,7 +2768,7 @@ function EventEditorSheet({
           {/* ─── Label / Farbe ─── */}
           <FormRow icon={<Palette className="w-5 h-5" />} onClick={() => setShowLabelPopup(true)}>
             <div className="flex items-center gap-2 flex-1">
-              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: currentLabel?.hex || getColorHex(color) }} />
+              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: labelHex || currentLabel?.hex || getColorHex(color) }} />
               <span className="text-sm text-text-1">{currentLabel?.name || "Kein Label"}</span>
             </div>
             <ChevronRight className="w-4 h-4 text-text-3 flex-shrink-0" />
@@ -3067,16 +3135,22 @@ function EventEditorSheet({
             {labels.map((label) => (
               <button
                 key={label.id}
-                onClick={() => { setColor(label.color); setShowLabelPopup(false); }}
+                onClick={() => { setColor(label.color); setLabelId(label.id); setLabelHex(label.hex); setShowLabelPopup(false); }}
                 className="w-full flex items-center px-5 py-3 active:bg-surface-2 transition-colors"
               >
                 <div className="w-4 h-4 rounded-full mr-3 flex-shrink-0" style={{ backgroundColor: label.hex }} />
                 <span className="flex-1 text-sm text-text-1 text-left">{label.name}</span>
-                {label.color === color && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
+                {label.id === (labelId || currentLabel?.id) && <Check className="w-4 h-4 text-accent flex-shrink-0" />}
               </button>
             ))}
             <div className="px-5 pt-3 pb-1">
-              <span className="text-xs text-text-3">Labels verwalten (kommt bald)</span>
+              <button
+                onClick={() => { setShowLabelPopup(false); setTimeout(() => setShowLabelManager(true), 200); }}
+                className="text-xs font-medium active:opacity-70 transition"
+                style={{ color: "var(--color-accent)" }}
+              >
+                Kategorien anpassen
+              </button>
             </div>
           </PopupSheet>
         )}
@@ -3231,6 +3305,29 @@ function EventEditorSheet({
                 </button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Label Manager full-page overlay */}
+      <AnimatePresence>
+        {showLabelManager && (
+          <motion.div
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            className="fixed inset-0"
+            style={{ zIndex: 1100, background: "var(--zu-bg)" }}
+          >
+            <LabelManagerScreen
+              labels={labels}
+              events={allEvents}
+              onSave={(newLabels, eventUpdates) => {
+                onLabelsChange?.(newLabels, eventUpdates);
+              }}
+              onClose={() => setShowLabelManager(false)}
+            />
           </motion.div>
         )}
       </AnimatePresence>
