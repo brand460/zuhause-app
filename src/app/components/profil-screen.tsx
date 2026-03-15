@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowLeft,
@@ -12,7 +12,9 @@ import {
   EyeOff,
   Mail,
   LogOut,
+  Camera,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "./auth-context";
 import { supabase, apiFetch } from "./supabase-client";
 
@@ -55,10 +57,70 @@ function Divider() {
   return <div style={{ height: 1, background: "var(--zu-border)", marginLeft: 16, marginRight: 16 }} />;
 }
 
-// ── Avatar ────────────────────────────────────────────────────────
+// ── Avatar Upload ─────────────────────────────────────────────────
 
-function BigAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) {
+/** Komprimiert ein File auf max 400×400px und max 200 KB als JPEG Blob. */
+async function compressImage(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const MAX = 400;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) {
+          height = Math.round((height * MAX) / width);
+          width = MAX;
+        } else {
+          width = Math.round((width * MAX) / height);
+          height = MAX;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Qualität iterativ reduzieren bis < 200 KB
+      const tryBlob = (quality: number) => {
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) { reject(new Error("canvas.toBlob failed")); return; }
+            if (blob.size <= 200 * 1024 || quality <= 0.3) {
+              resolve(blob);
+            } else {
+              tryBlob(Math.max(quality - 0.1, 0.3));
+            }
+          },
+          "image/jpeg",
+          quality
+        );
+      };
+      tryBlob(0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Bild konnte nicht geladen werden")); };
+    img.src = objectUrl;
+  });
+}
+
+function AvatarUpload({
+  name,
+  avatarUrl,
+  userId,
+  onUploaded,
+}: {
+  name: string;
+  avatarUrl?: string | null;
+  userId: string;
+  onUploaded: () => Promise<void>;
+}) {
   const [imgError, setImgError] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  // Lokale Preview-URL damit der neue Avatar sofort sichtbar ist
+  const [localUrl, setLocalUrl] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const initials = name
     .split(" ")
@@ -67,31 +129,117 @@ function BigAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string | nul
     .join("")
     .toUpperCase();
 
-  if (avatarUrl && !imgError) {
-    return (
-      <img
-        src={avatarUrl}
-        alt={name}
-        onError={() => setImgError(true)}
-        className="rounded-full object-cover"
-        style={{ width: 80, height: 80 }}
-        referrerPolicy="no-referrer"
-      />
-    );
-  }
+  const displayUrl = localUrl || (imgError ? null : avatarUrl);
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset input damit dasselbe Bild erneut gewählt werden kann
+    e.target.value = "";
+
+    setUploading(true);
+    try {
+      const blob = await compressImage(file);
+      const fileName = `${userId}.jpg`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(fileName, blob, {
+          contentType: "image/jpeg",
+          upsert: true,
+        });
+      if (uploadError) throw new Error(`Upload fehlgeschlagen: ${uploadError.message}`);
+
+      const { data: urlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(fileName);
+      // Cache-Buster damit der Browser das neue Bild lädt
+      const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+
+      const { error: dbError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: publicUrl })
+        .eq("id", userId);
+      if (dbError) throw new Error(`Profil-Update fehlgeschlagen: ${dbError.message}`);
+
+      setLocalUrl(publicUrl);
+      setImgError(false);
+      await onUploaded();
+      toast.success("Profilbild aktualisiert ✅");
+    } catch (err: any) {
+      console.log("[AvatarUpload] Fehler:", err);
+      toast.error("Upload fehlgeschlagen — bitte nochmal versuchen");
+    } finally {
+      setUploading(false);
+    }
+  }, [userId, onUploaded]);
 
   return (
-    <div
-      className="rounded-full flex items-center justify-center font-bold text-white"
-      style={{
-        width: 80,
-        height: 80,
-        background: "var(--accent)",
-        fontSize: 28,
-        letterSpacing: "0.02em",
-      }}
-    >
-      {initials || "?"}
+    <div className="relative flex-shrink-0" style={{ width: 80, height: 80 }}>
+      {/* Hidden file input */}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+
+      {/* Avatar */}
+      <button
+        type="button"
+        onClick={() => !uploading && inputRef.current?.click()}
+        className="w-full h-full rounded-full overflow-hidden flex items-center justify-center font-bold text-white relative"
+        style={{
+          background: displayUrl ? "transparent" : "var(--accent)",
+          fontSize: 28,
+          letterSpacing: "0.02em",
+          WebkitTouchCallout: "none",
+        }}
+        aria-label="Profilbild ändern"
+      >
+        {displayUrl ? (
+          <img
+            src={displayUrl}
+            alt={name}
+            onError={() => setImgError(true)}
+            className="w-full h-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+        ) : (
+          initials || "?"
+        )}
+
+        {/* Dimming overlay während Upload */}
+        {uploading && (
+          <div
+            className="absolute inset-0 flex items-center justify-center rounded-full"
+            style={{ background: "rgba(0,0,0,0.45)" }}
+          >
+            <Loader2 className="w-6 h-6 text-white animate-spin" />
+          </div>
+        )}
+      </button>
+
+      {/* Kamera-Badge */}
+      <button
+        type="button"
+        onClick={() => !uploading && inputRef.current?.click()}
+        className="absolute bottom-0 right-0 flex items-center justify-center rounded-full shadow-md transition active:scale-90"
+        style={{
+          width: 26,
+          height: 26,
+          background: "var(--surface)",
+          border: "2px solid var(--zu-bg)",
+          WebkitTouchCallout: "none",
+        }}
+        aria-hidden="true"
+        tabIndex={-1}
+      >
+        <Camera className="w-3.5 h-3.5" style={{ color: "var(--text-2)" }} />
+      </button>
     </div>
   );
 }
@@ -374,12 +522,15 @@ export function ProfilScreen({ onClose }: ProfilScreenProps) {
 
         {/* ── Avatar hero ── */}
         <div className="flex flex-col items-center pt-6 pb-2">
-          <BigAvatar
+          <AvatarUpload
             name={profile?.display_name || user?.email?.split("@")[0] || "?"}
             avatarUrl={profile?.avatar_url}
+            userId={user!.id}
+            onUploaded={refreshProfile}
           />
+          
           {isOAuth && (
-            <p className="mt-2 text-xs" style={{ color: "var(--text-3)" }}>
+            <p className="mt-0.5 text-xs" style={{ color: "var(--text-3)" }}>
               Angemeldet mit Google
             </p>
           )}
