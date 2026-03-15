@@ -114,16 +114,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       "Nutzer";
     const avatarUrl = authUser.user_metadata?.avatar_url || null;
 
+    // IMPORTANT: Never include avatar_url: null in the upsert.
+    // Email users don't have user_metadata.avatar_url, so avatarUrl would be
+    // null and would overwrite any manually uploaded avatar in the profiles table.
+    // Only write avatar_url when the OAuth provider actually supplied one.
+    const upsertData: Record<string, any> = {
+      id: authUser.id,
+      display_name: displayName,
+    };
+    if (avatarUrl !== null) {
+      upsertData.avatar_url = avatarUrl;
+    }
+
     const { error } = await supabase
       .from("profiles")
-      .upsert(
-        {
-          id: authUser.id,
-          display_name: displayName,
-          avatar_url: avatarUrl,
-        },
-        { onConflict: "id" }
-      );
+      .upsert(upsertData, { onConflict: "id" });
 
     if (error) {
       console.log("ensureProfile upsert error:", error.message);

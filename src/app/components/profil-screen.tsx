@@ -1,4 +1,6 @@
 import React, { useState, useRef, useCallback } from "react";
+import Cropper from "react-easy-crop";
+import type { Area } from "react-easy-crop";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ArrowLeft,
@@ -57,53 +59,208 @@ function Divider() {
   return <div style={{ height: 1, background: "var(--zu-border)", marginLeft: 16, marginRight: 16 }} />;
 }
 
-// ── Avatar Upload ─────────────────────────────────────────────────
+// ── Crop helper ───────────────────────────────────────────────────
 
-/** Komprimiert ein File auf max 400×400px und max 200 KB als JPEG Blob. */
-async function compressImage(file: File): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(objectUrl);
-      const MAX = 400;
-      let { width, height } = img;
-      if (width > MAX || height > MAX) {
-        if (width > height) {
-          height = Math.round((height * MAX) / width);
-          width = MAX;
-        } else {
-          width = Math.round((width * MAX) / height);
-          height = MAX;
-        }
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, width, height);
+/**
+ * Schneidet den pixelgenauen Bereich aus dem Bild aus und gibt
+ * ein 400×400px JPEG Blob zurück. Qualität wird iterativ reduziert
+ * bis unter 200 KB.
+ */
+async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+  const img = new Image();
+  img.src = imageSrc;
+  await new Promise<void>((res, rej) => {
+    img.onload = () => res();
+    img.onerror = () => rej(new Error("Bild konnte nicht geladen werden"));
+  });
 
-      // Qualität iterativ reduzieren bis < 200 KB
-      const tryBlob = (quality: number) => {
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) { reject(new Error("canvas.toBlob failed")); return; }
-            if (blob.size <= 200 * 1024 || quality <= 0.3) {
-              resolve(blob);
-            } else {
-              tryBlob(Math.max(quality - 0.1, 0.3));
-            }
-          },
-          "image/jpeg",
-          quality
-        );
-      };
-      tryBlob(0.85);
+  const canvas = document.createElement("canvas");
+  canvas.width = 400;
+  canvas.height = 400;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(
+    img,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    400,
+    400
+  );
+
+  return new Promise<Blob>((resolve, reject) => {
+    const tryBlob = (quality: number) => {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { reject(new Error("canvas.toBlob failed")); return; }
+          if (blob.size <= 200 * 1024 || quality <= 0.3) {
+            resolve(blob);
+          } else {
+            tryBlob(Math.max(quality - 0.1, 0.3));
+          }
+        },
+        "image/jpeg",
+        quality
+      );
     };
-    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Bild konnte nicht geladen werden")); };
-    img.src = objectUrl;
+    tryBlob(0.85);
   });
 }
+
+// ── Crop Screen ───────────────────────────────────────────────────
+
+function CropScreen({
+  imageSrc,
+  onCancel,
+  onConfirm,
+}: {
+  imageSrc: string;
+  onCancel: () => void;
+  onConfirm: (blob: Blob) => void;
+}) {
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const [processing, setProcessing] = useState(false);
+
+  const handleConfirm = async () => {
+    if (!croppedAreaPixels) return;
+    setProcessing(true);
+    try {
+      const blob = await getCroppedImg(imageSrc, croppedAreaPixels);
+      onConfirm(blob);
+    } catch (err) {
+      console.log("[CropScreen] getCroppedImg Fehler:", err);
+      toast.error("Zuschneiden fehlgeschlagen — bitte nochmal versuchen");
+      setProcessing(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      className="fixed inset-0 z-[2000] flex flex-col"
+      style={{ background: "#000", touchAction: "none" }}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center gap-3 px-4 flex-shrink-0"
+        style={{
+          paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)",
+          paddingBottom: 12,
+          background: "rgba(0,0,0,0.7)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+        }}
+      >
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={processing}
+          className="w-9 h-9 rounded-xl flex items-center justify-center transition active:opacity-60 disabled:opacity-40"
+          style={{ background: "rgba(255,255,255,0.12)" }}
+        >
+          <X className="w-5 h-5 text-white" />
+        </button>
+        <h2 className="flex-1 font-semibold text-white text-center" style={{ fontSize: 16 }}>
+          Bild zuschneiden
+        </h2>
+        {/* Spacer to center title */}
+        <div className="w-9" />
+      </div>
+
+      {/* Crop area */}
+      <div className="flex-1 relative" style={{ touchAction: "none" }}>
+        <Cropper
+          image={imageSrc}
+          crop={crop}
+          zoom={zoom}
+          aspect={1}
+          cropShape="round"
+          showGrid={false}
+          onCropChange={setCrop}
+          onZoomChange={setZoom}
+          onCropComplete={(_, areaPixels) => setCroppedAreaPixels(areaPixels)}
+          style={{
+            containerStyle: { background: "#000" },
+            cropAreaStyle: {
+              border: "2px solid rgba(255,255,255,0.85)",
+              boxShadow: "0 0 0 9999px rgba(0,0,0,0.82)",
+            },
+          }}
+        />
+      </div>
+
+      {/* Zoom slider */}
+      <div
+        className="flex items-center gap-3 px-6 flex-shrink-0"
+        style={{ paddingTop: 16, paddingBottom: 8, background: "rgba(0,0,0,0.7)" }}
+      >
+        <span className="text-white/50 text-sm select-none">−</span>
+        <input
+          type="range"
+          min={1}
+          max={3}
+          step={0.01}
+          value={zoom}
+          onChange={(e) => setZoom(Number(e.target.value))}
+          className="flex-1"
+          style={{ accentColor: "var(--accent)" }}
+        />
+        <span className="text-white/50 text-sm select-none">+</span>
+      </div>
+
+      {/* Bottom buttons */}
+      <div
+        className="flex gap-3 px-4 flex-shrink-0"
+        style={{
+          paddingTop: 12,
+          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 20px)",
+          background: "rgba(0,0,0,0.7)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+        }}
+      >
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={processing}
+          className="flex-1 py-3 rounded-2xl font-semibold text-sm transition active:scale-95 disabled:opacity-40"
+          style={{
+            background: "rgba(255,255,255,0.15)",
+            color: "#fff",
+            minHeight: 50,
+          }}
+        >
+          Abbrechen
+        </button>
+        <button
+          type="button"
+          onClick={handleConfirm}
+          disabled={processing || !croppedAreaPixels}
+          className="flex-1 py-3 rounded-2xl font-semibold text-sm text-white transition active:scale-95 disabled:opacity-40"
+          style={{
+            background: "var(--accent)",
+            minHeight: 50,
+          }}
+        >
+          {processing ? (
+            <Loader2 className="w-5 h-5 animate-spin mx-auto" />
+          ) : (
+            "Übernehmen"
+          )}
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Avatar Upload ────────────────────────────────────────────────��
 
 function AvatarUpload({
   name,
@@ -118,8 +275,9 @@ function AvatarUpload({
 }) {
   const [imgError, setImgError] = useState(false);
   const [uploading, setUploading] = useState(false);
-  // Lokale Preview-URL damit der neue Avatar sofort sichtbar ist
   const [localUrl, setLocalUrl] = useState<string | null>(null);
+  // Crop-State: objectURL des gewählten Bildes
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const initials = name
@@ -131,15 +289,27 @@ function AvatarUpload({
 
   const displayUrl = localUrl || (imgError ? null : avatarUrl);
 
-  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Datei wurde gewählt → CropScreen öffnen
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Reset input damit dasselbe Bild erneut gewählt werden kann
-    e.target.value = "";
+    e.target.value = ""; // Reset für erneute Auswahl
 
+    const objectUrl = URL.createObjectURL(file);
+    setCropSrc(objectUrl);
+  }, []);
+
+  // CropScreen: Abbrechen
+  const handleCropCancel = useCallback(() => {
+    if (cropSrc) URL.revokeObjectURL(cropSrc);
+    setCropSrc(null);
+  }, [cropSrc]);
+
+  // CropScreen: Übernehmen → Blob hochladen
+  const handleCropConfirm = useCallback(async (blob: Blob) => {
+    // CropScreen bleibt sichtbar während Upload (processing state)
     setUploading(true);
     try {
-      const blob = await compressImage(file);
       const fileName = `${userId}.jpg`;
 
       const { error: uploadError } = await supabase.storage
@@ -170,77 +340,92 @@ function AvatarUpload({
       console.log("[AvatarUpload] Fehler:", err);
       toast.error("Upload fehlgeschlagen — bitte nochmal versuchen");
     } finally {
+      if (cropSrc) URL.revokeObjectURL(cropSrc);
+      setCropSrc(null);
       setUploading(false);
     }
-  }, [userId, onUploaded]);
+  }, [userId, onUploaded, cropSrc]);
 
   return (
-    <div className="relative flex-shrink-0" style={{ width: 80, height: 80 }}>
-      {/* Hidden file input */}
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleFileChange}
-        aria-hidden="true"
-        tabIndex={-1}
-      />
-
-      {/* Avatar */}
-      <button
-        type="button"
-        onClick={() => !uploading && inputRef.current?.click()}
-        className="w-full h-full rounded-full overflow-hidden flex items-center justify-center font-bold text-white relative"
-        style={{
-          background: displayUrl ? "transparent" : "var(--accent)",
-          fontSize: 28,
-          letterSpacing: "0.02em",
-          WebkitTouchCallout: "none",
-        }}
-        aria-label="Profilbild ändern"
-      >
-        {displayUrl ? (
-          <img
-            src={displayUrl}
-            alt={name}
-            onError={() => setImgError(true)}
-            className="w-full h-full object-cover"
-            referrerPolicy="no-referrer"
+    <>
+      {/* Crop overlay */}
+      <AnimatePresence>
+        {cropSrc && (
+          <CropScreen
+            imageSrc={cropSrc}
+            onCancel={handleCropCancel}
+            onConfirm={handleCropConfirm}
           />
-        ) : (
-          initials || "?"
         )}
+      </AnimatePresence>
 
-        {/* Dimming overlay während Upload */}
-        {uploading && (
-          <div
-            className="absolute inset-0 flex items-center justify-center rounded-full"
-            style={{ background: "rgba(0,0,0,0.45)" }}
-          >
-            <Loader2 className="w-6 h-6 text-white animate-spin" />
-          </div>
-        )}
-      </button>
+      <div className="relative flex-shrink-0" style={{ width: 80, height: 80 }}>
+        {/* Hidden file input */}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
 
-      {/* Kamera-Badge */}
-      <button
-        type="button"
-        onClick={() => !uploading && inputRef.current?.click()}
-        className="absolute bottom-0 right-0 flex items-center justify-center rounded-full shadow-md transition active:scale-90"
-        style={{
-          width: 26,
-          height: 26,
-          background: "var(--surface)",
-          border: "2px solid var(--zu-bg)",
-          WebkitTouchCallout: "none",
-        }}
-        aria-hidden="true"
-        tabIndex={-1}
-      >
-        <Camera className="w-3.5 h-3.5" style={{ color: "var(--text-2)" }} />
-      </button>
-    </div>
+        {/* Avatar button */}
+        <button
+          type="button"
+          onClick={() => !uploading && inputRef.current?.click()}
+          className="w-full h-full rounded-full overflow-hidden flex items-center justify-center font-bold text-white relative"
+          style={{
+            background: displayUrl ? "transparent" : "var(--accent)",
+            fontSize: 28,
+            letterSpacing: "0.02em",
+            WebkitTouchCallout: "none",
+          }}
+          aria-label="Profilbild ändern"
+        >
+          {displayUrl ? (
+            <img
+              src={displayUrl}
+              alt={name}
+              onError={() => setImgError(true)}
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            initials || "?"
+          )}
+
+          {/* Upload-Spinner */}
+          {uploading && (
+            <div
+              className="absolute inset-0 flex items-center justify-center rounded-full"
+              style={{ background: "rgba(0,0,0,0.45)" }}
+            >
+              <Loader2 className="w-6 h-6 text-white animate-spin" />
+            </div>
+          )}
+        </button>
+
+        {/* Kamera-Badge */}
+        <button
+          type="button"
+          onClick={() => !uploading && inputRef.current?.click()}
+          className="absolute bottom-0 right-0 flex items-center justify-center rounded-full shadow-md transition active:scale-90"
+          style={{
+            width: 26,
+            height: 26,
+            background: "var(--surface)",
+            border: "2px solid var(--zu-bg)",
+            WebkitTouchCallout: "none",
+          }}
+          aria-hidden="true"
+          tabIndex={-1}
+        >
+          <Camera className="w-3.5 h-3.5" style={{ color: "var(--text-2)" }} />
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -439,7 +624,6 @@ export function ProfilScreen({ onClose }: ProfilScreenProps) {
 
     setPwSaving(true);
     try {
-      // Re-authenticate first using current password
       if (pwCurrent) {
         const { error: signInErr } = await supabase.auth.signInWithPassword({
           email: user!.email!,
@@ -520,270 +704,272 @@ export function ProfilScreen({ onClose }: ProfilScreenProps) {
       <div className="flex-1 overflow-y-auto pb-8" style={{ overscrollBehavior: "contain" }}>
         <div style={{ maxWidth: 680, margin: "0 auto", width: "100%" }}>
 
-        {/* ── Avatar hero ── */}
-        <div className="flex flex-col items-center pt-6 pb-2">
-          <AvatarUpload
-            name={profile?.display_name || user?.email?.split("@")[0] || "?"}
-            avatarUrl={profile?.avatar_url}
-            userId={user!.id}
-            onUploaded={refreshProfile}
-          />
-          
-          {isOAuth && (
-            <p className="mt-0.5 text-xs" style={{ color: "var(--text-3)" }}>
-              Angemeldet mit Google
+          {/* ── Avatar hero ── */}
+          <div className="flex flex-col items-center pt-6 pb-2">
+            <AvatarUpload
+              name={profile?.display_name || user?.email?.split("@")[0] || "?"}
+              avatarUrl={profile?.avatar_url}
+              userId={user!.id}
+              onUploaded={refreshProfile}
+            />
+            <p className="mt-2 text-xs" style={{ color: "var(--text-3)" }}>
+              Tippe um Bild zu ändern
             </p>
-          )}
-        </div>
-
-        {/* ── Anzeigename ── */}
-        <SectionHeader title="Anzeigename" />
-        <Card>
-          <div className="px-4 py-3.5 flex items-center gap-3">
-            {editingName ? (
-              <>
-                <input
-                  type="search"
-                  autoComplete="off"
-                  autoCapitalize="sentences"
-                  data-lpignore="true"
-                  data-1p-ignore="true"
-                  data-form-type="other"
-                  value={nameValue}
-                  onChange={(e) => setNameValue(e.target.value)}
-                  autoFocus
-                  className="flex-1 bg-surface-2 px-3 py-2 text-text-1 focus:outline-none text-sm"
-                  style={{
-                    borderRadius: 10,
-                    border: "1.5px solid var(--accent-mid)",
-                    caretColor: "var(--accent)",
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveName();
-                    if (e.key === "Escape") {
-                      setEditingName(false);
-                      setNameValue(profile?.display_name ?? "");
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={saveName}
-                  disabled={nameSaving}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center transition active:scale-90"
-                  style={{ background: "var(--accent)" }}
-                >
-                  {nameSaving ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  ) : (
-                    <Check className="w-4 h-4 text-white" />
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingName(false);
-                    setNameValue(profile?.display_name ?? "");
-                    setNameError("");
-                  }}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center transition active:scale-90 bg-surface-2"
-                >
-                  <X className="w-4 h-4 text-text-2" />
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="flex-1 font-semibold text-text-1" style={{ fontSize: 15 }}>
-                  {profile?.display_name || "–"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingName(true);
-                    setNameValue(profile?.display_name ?? "");
-                  }}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center transition active:scale-90 bg-surface-2"
-                >
-                  <Pencil className="w-3.5 h-3.5 text-text-2" />
-                </button>
-              </>
+            {isOAuth && (
+              <p className="mt-0.5 text-xs" style={{ color: "var(--text-3)" }}>
+                Angemeldet mit Google
+              </p>
             )}
           </div>
-          {nameError && (
-            <div className="px-4 pb-3 text-xs" style={{ color: "var(--danger)" }}>
-              {nameError}
-            </div>
-          )}
-        </Card>
 
-        {/* ── E-Mail ── */}
-        <SectionHeader title="E-Mail" />
-        <Card>
-          <div className="px-4 py-3.5 flex items-center gap-3">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: "var(--surface-2)" }}
-            >
-              <Mail className="w-[18px] h-[18px] text-accent" />
-            </div>
-            <span className="flex-1 text-sm text-text-1 truncate">{user?.email || "–"}</span>
-          </div>
-        </Card>
-
-        {/* ── Passwort (nur für E-Mail-Nutzer) ── */}
-        {!isOAuth && (
-          <>
-            <SectionHeader title="Sicherheit" />
-            <Card>
-              {!showPasswordForm ? (
-                <button
-                  type="button"
-                  onClick={() => setShowPasswordForm(true)}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition active:bg-surface-2"
-                >
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: "var(--surface-2)" }}
+          {/* ── Anzeigename ── */}
+          <SectionHeader title="Anzeigename" />
+          <Card>
+            <div className="px-4 py-3.5 flex items-center gap-3">
+              {editingName ? (
+                <>
+                  <input
+                    type="search"
+                    autoComplete="off"
+                    autoCapitalize="sentences"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    data-form-type="other"
+                    value={nameValue}
+                    onChange={(e) => setNameValue(e.target.value)}
+                    autoFocus
+                    className="flex-1 bg-surface-2 px-3 py-2 text-text-1 focus:outline-none text-sm"
+                    style={{
+                      borderRadius: 10,
+                      border: "1.5px solid var(--accent-mid)",
+                      caretColor: "var(--accent)",
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveName();
+                      if (e.key === "Escape") {
+                        setEditingName(false);
+                        setNameValue(profile?.display_name ?? "");
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={saveName}
+                    disabled={nameSaving}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition active:scale-90"
+                    style={{ background: "var(--accent)" }}
                   >
-                    <KeyRound className="w-[18px] h-[18px] text-accent" />
-                  </div>
-                  <span className="flex-1 text-sm font-medium text-text-1">
-                    Passwort ändern
-                  </span>
-                </button>
+                    {nameSaving ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    ) : (
+                      <Check className="w-4 h-4 text-white" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingName(false);
+                      setNameValue(profile?.display_name ?? "");
+                      setNameError("");
+                    }}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition active:scale-90 bg-surface-2"
+                  >
+                    <X className="w-4 h-4 text-text-2" />
+                  </button>
+                </>
               ) : (
-                <div className="px-4 py-4 flex flex-col gap-3">
-                  {pwSuccess ? (
-                    <div
-                      className="flex items-center gap-2 py-3 px-4 rounded-xl"
-                      style={{ background: "var(--accent-light)" }}
-                    >
-                      <Check className="w-4 h-4 flex-shrink-0" style={{ color: "var(--accent)" }} />
-                      <span className="text-sm font-medium" style={{ color: "var(--accent-dark)" }}>
-                        Passwort erfolgreich geändert!
-                      </span>
-                    </div>
-                  ) : (
-                    <>
-                      <PasswordField
-                        label="Aktuelles Passwort"
-                        value={pwCurrent}
-                        onChange={setPwCurrent}
-                        placeholder="••••••••"
-                      />
-                      <PasswordField
-                        label="Neues Passwort"
-                        value={pwNew}
-                        onChange={setPwNew}
-                        placeholder="Mindestens 6 Zeichen"
-                      />
-                      <PasswordField
-                        label="Neues Passwort wiederholen"
-                        value={pwConfirm}
-                        onChange={setPwConfirm}
-                        placeholder="••••••••"
-                      />
-
-                      {pwError && (
-                        <p className="text-xs" style={{ color: "var(--danger)" }}>
-                          {pwError}
-                        </p>
-                      )}
-
-                      <div className="flex gap-2 mt-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowPasswordForm(false);
-                            setPwCurrent("");
-                            setPwNew("");
-                            setPwConfirm("");
-                            setPwError("");
-                          }}
-                          className="flex-1 py-2.5 text-sm font-semibold transition active:scale-95"
-                          style={{
-                            background: "var(--surface-2)",
-                            borderRadius: "var(--radius-btn)",
-                            color: "var(--text-1)",
-                            minHeight: 44,
-                          }}
-                        >
-                          Abbrechen
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleChangePassword}
-                          disabled={pwSaving}
-                          className="flex-1 py-2.5 text-sm font-semibold text-white transition active:scale-95 disabled:opacity-50"
-                          style={{
-                            background: "var(--accent)",
-                            borderRadius: "var(--radius-btn)",
-                            minHeight: 44,
-                          }}
-                        >
-                          {pwSaving ? (
-                            <Loader2 className="w-4 h-4 animate-spin mx-auto" />
-                          ) : (
-                            "Speichern"
-                          )}
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                <>
+                  <span className="flex-1 font-semibold text-text-1" style={{ fontSize: 15 }}>
+                    {profile?.display_name || "–"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingName(true);
+                      setNameValue(profile?.display_name ?? "");
+                    }}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition active:scale-90 bg-surface-2"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-text-2" />
+                  </button>
+                </>
               )}
-            </Card>
-          </>
-        )}
-
-        {/* ── Abmelden & Löschen ── */}
-        <SectionHeader title="Konto" />
-        <Card>
-          <button
-            type="button"
-            onClick={() => setConfirmSignOut(true)}
-            className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition active:bg-surface-2"
-          >
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: "var(--surface-2)" }}
-            >
-              <LogOut className="w-[18px] h-[18px] text-accent" />
             </div>
-            <span className="flex-1 text-sm font-medium text-text-1">Abmelden</span>
-          </button>
+            {nameError && (
+              <div className="px-4 pb-3 text-xs" style={{ color: "var(--danger)" }}>
+                {nameError}
+              </div>
+            )}
+          </Card>
 
-          <Divider />
+          {/* ── E-Mail ── */}
+          <SectionHeader title="E-Mail" />
+          <Card>
+            <div className="px-4 py-3.5 flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "var(--surface-2)" }}
+              >
+                <Mail className="w-[18px] h-[18px] text-accent" />
+              </div>
+              <span className="flex-1 text-sm text-text-1 truncate">{user?.email || "–"}</span>
+            </div>
+          </Card>
 
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition active:bg-surface-2"
-          >
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{ background: "var(--danger-light)" }}
-            >
-              <Trash2 className="w-[18px] h-[18px]" style={{ color: "var(--danger)" }} />
-            </div>
-            <div>
-              <p className="font-medium text-sm" style={{ color: "var(--danger)" }}>
-                Konto löschen
-              </p>
-              <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
-                Löscht dein Konto unwiderruflich
-              </p>
-            </div>
-          </button>
+          {/* ── Passwort (nur für E-Mail-Nutzer) ── */}
+          {!isOAuth && (
+            <>
+              <SectionHeader title="Sicherheit" />
+              <Card>
+                {!showPasswordForm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordForm(true)}
+                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition active:bg-surface-2"
+                  >
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: "var(--surface-2)" }}
+                    >
+                      <KeyRound className="w-[18px] h-[18px] text-accent" />
+                    </div>
+                    <span className="flex-1 text-sm font-medium text-text-1">
+                      Passwort ändern
+                    </span>
+                  </button>
+                ) : (
+                  <div className="px-4 py-4 flex flex-col gap-3">
+                    {pwSuccess ? (
+                      <div
+                        className="flex items-center gap-2 py-3 px-4 rounded-xl"
+                        style={{ background: "var(--accent-light)" }}
+                      >
+                        <Check className="w-4 h-4 flex-shrink-0" style={{ color: "var(--accent)" }} />
+                        <span className="text-sm font-medium" style={{ color: "var(--accent-dark)" }}>
+                          Passwort erfolgreich geändert!
+                        </span>
+                      </div>
+                    ) : (
+                      <>
+                        <PasswordField
+                          label="Aktuelles Passwort"
+                          value={pwCurrent}
+                          onChange={setPwCurrent}
+                          placeholder="••••••••"
+                        />
+                        <PasswordField
+                          label="Neues Passwort"
+                          value={pwNew}
+                          onChange={setPwNew}
+                          placeholder="Mindestens 6 Zeichen"
+                        />
+                        <PasswordField
+                          label="Neues Passwort wiederholen"
+                          value={pwConfirm}
+                          onChange={setPwConfirm}
+                          placeholder="••••••••"
+                        />
 
-          {deleteError && (
-            <div className="px-4 pb-3 text-sm" style={{ color: "var(--danger)" }}>
-              {deleteError}
-            </div>
+                        {pwError && (
+                          <p className="text-xs" style={{ color: "var(--danger)" }}>
+                            {pwError}
+                          </p>
+                        )}
+
+                        <div className="flex gap-2 mt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowPasswordForm(false);
+                              setPwCurrent("");
+                              setPwNew("");
+                              setPwConfirm("");
+                              setPwError("");
+                            }}
+                            className="flex-1 py-2.5 text-sm font-semibold transition active:scale-95"
+                            style={{
+                              background: "var(--surface-2)",
+                              borderRadius: "var(--radius-btn)",
+                              color: "var(--text-1)",
+                              minHeight: 44,
+                            }}
+                          >
+                            Abbrechen
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleChangePassword}
+                            disabled={pwSaving}
+                            className="flex-1 py-2.5 text-sm font-semibold text-white transition active:scale-95 disabled:opacity-50"
+                            style={{
+                              background: "var(--accent)",
+                              borderRadius: "var(--radius-btn)",
+                              minHeight: 44,
+                            }}
+                          >
+                            {pwSaving ? (
+                              <Loader2 className="w-4 h-4 animate-spin mx-auto" />
+                            ) : (
+                              "Speichern"
+                            )}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </Card>
+            </>
           )}
-        </Card>
 
-        <div style={{ height: "env(safe-area-inset-bottom, 24px)" }} />
+          {/* ── Abmelden & Löschen ── */}
+          <SectionHeader title="Konto" />
+          <Card>
+            <button
+              type="button"
+              onClick={() => setConfirmSignOut(true)}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition active:bg-surface-2"
+            >
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "var(--surface-2)" }}
+              >
+                <LogOut className="w-[18px] h-[18px] text-accent" />
+              </div>
+              <span className="flex-1 text-sm font-medium text-text-1">Abmelden</span>
+            </button>
+
+            <Divider />
+
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="w-full flex items-center gap-3 px-4 py-3.5 text-left transition active:bg-surface-2"
+            >
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "var(--danger-light)" }}
+              >
+                <Trash2 className="w-[18px] h-[18px]" style={{ color: "var(--danger)" }} />
+              </div>
+              <div>
+                <p className="font-medium text-sm" style={{ color: "var(--danger)" }}>
+                  Konto löschen
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-3)" }}>
+                  Löscht dein Konto unwiderruflich
+                </p>
+              </div>
+            </button>
+
+            {deleteError && (
+              <div className="px-4 pb-3 text-sm" style={{ color: "var(--danger)" }}>
+                {deleteError}
+              </div>
+            )}
+          </Card>
+
+          <div style={{ height: "env(safe-area-inset-bottom, 24px)" }} />
         </div>
       </div>
 
