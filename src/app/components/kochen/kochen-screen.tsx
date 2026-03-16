@@ -1915,13 +1915,18 @@ Regeln:
               <span className="text-white text-sm font-semibold">Schneide den Rezeptbereich aus</span>
             </div>
 
-            {/* Cropper area — free aspect ratio */}
-            <div className="relative flex-1">
+            {/* Cropper area — free aspect ratio, explicit height for react-easy-crop */}
+            <div
+              className="relative flex-shrink-0"
+              style={{ height: "calc(100dvh - 120px)", position: "relative" }}
+            >
               <Cropper
                 image={photoCropSrc}
                 crop={photoCrop}
                 zoom={photoZoom}
-                aspect={undefined as any}
+                aspect={undefined}
+                cropShape="rect"
+                showGrid={true}
                 onCropChange={setPhotoCrop}
                 onZoomChange={setPhotoZoom}
                 onCropComplete={(_croppedArea, pixels) => setPhotoCroppedArea(pixels)}
