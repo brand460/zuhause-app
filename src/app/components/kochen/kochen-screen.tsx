@@ -185,6 +185,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   const [photoCroppedArea, setPhotoCroppedArea] = useState<Area | null>(null);
   const [photoExtracting, setPhotoExtracting] = useState(false);
   const photoFileRef = useRef<HTMLInputElement>(null);
+  const [pendingPhotoUpload, setPendingPhotoUpload] = useState(false);
 
   // Meal plan modals
   const [showMealPicker, setShowMealPicker] = useState(false);
@@ -563,6 +564,16 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
     setEntryPopover(null);
     toast.success("Gespeichert");
   };
+
+  // ── Pending photo upload: wait for drawer animation to finish ─────
+  useEffect(() => {
+    if (!pendingPhotoUpload) return;
+    const timer = setTimeout(() => {
+      photoFileRef.current?.click();
+      setPendingPhotoUpload(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [pendingPhotoUpload]);
 
   // ── URL import ─────────────────────────────────────────────────────
 
@@ -1786,7 +1797,7 @@ Regeln:
                 className="flex items-center gap-3 p-3 rounded-xl bg-surface-2 hover:bg-accent-light transition text-left"
                 onClick={() => {
                   setShowAddSheet(false);
-                  photoFileRef.current?.click();
+                  setPendingPhotoUpload(true);
                 }}
               >
                 <div className="w-10 h-10 rounded-xl bg-accent-light flex items-center justify-center">
@@ -1797,20 +1808,20 @@ Regeln:
                   <p className="text-xs text-text-3">Rezept aus einem Foto extrahieren</p>
                 </div>
               </button>
-              {/* Hidden file input for photo extraction */}
-              <input
-                ref={photoFileRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={handlePhotoFileChange}
-              />
               </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Hidden file input for photo extraction — outside all drawers so it survives drawer close */}
+      <input
+        ref={photoFileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handlePhotoFileChange}
+      />
 
       {/* URL Import Modal */}
       <AnimatePresence>
