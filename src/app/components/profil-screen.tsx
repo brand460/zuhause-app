@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback } from "react";
-import Cropper from "react-easy-crop";
-import type { Area } from "react-easy-crop";
 import { motion, AnimatePresence } from "motion/react";
+import { FreeCropOverlay } from "./kochen/free-crop-overlay";
 import {
   ArrowLeft,
   Pencil,
@@ -59,206 +58,7 @@ function Divider() {
   return <div style={{ height: 1, background: "var(--zu-border)", marginLeft: 16, marginRight: 16 }} />;
 }
 
-// ── Crop helper ───────────────────────────────────────────────────
 
-/**
- * Schneidet den pixelgenauen Bereich aus dem Bild aus und gibt
- * ein 400×400px JPEG Blob zurück. Qualität wird iterativ reduziert
- * bis unter 200 KB.
- */
-async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
-  const img = new Image();
-  img.src = imageSrc;
-  await new Promise<void>((res, rej) => {
-    img.onload = () => res();
-    img.onerror = () => rej(new Error("Bild konnte nicht geladen werden"));
-  });
-
-  const canvas = document.createElement("canvas");
-  canvas.width = 400;
-  canvas.height = 400;
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(
-    img,
-    pixelCrop.x,
-    pixelCrop.y,
-    pixelCrop.width,
-    pixelCrop.height,
-    0,
-    0,
-    400,
-    400
-  );
-
-  return new Promise<Blob>((resolve, reject) => {
-    const tryBlob = (quality: number) => {
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) { reject(new Error("canvas.toBlob failed")); return; }
-          if (blob.size <= 200 * 1024 || quality <= 0.3) {
-            resolve(blob);
-          } else {
-            tryBlob(Math.max(quality - 0.1, 0.3));
-          }
-        },
-        "image/jpeg",
-        quality
-      );
-    };
-    tryBlob(0.85);
-  });
-}
-
-// ── Crop Screen ───────────────────────────────────────────────────
-
-function CropScreen({
-  imageSrc,
-  onCancel,
-  onConfirm,
-}: {
-  imageSrc: string;
-  onCancel: () => void;
-  onConfirm: (blob: Blob) => void;
-}) {
-  const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
-  const [processing, setProcessing] = useState(false);
-
-  const handleConfirm = async () => {
-    if (!croppedAreaPixels) return;
-    setProcessing(true);
-    try {
-      const blob = await getCroppedImg(imageSrc, croppedAreaPixels);
-      onConfirm(blob);
-    } catch (err) {
-      console.log("[CropScreen] getCroppedImg Fehler:", err);
-      toast.error("Zuschneiden fehlgeschlagen — bitte nochmal versuchen");
-      setProcessing(false);
-    }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.18 }}
-      className="fixed inset-0 z-[2000] flex flex-col"
-      style={{ background: "#000", touchAction: "none" }}
-    >
-      {/* Header */}
-      <div
-        className="flex items-center gap-3 px-4 flex-shrink-0"
-        style={{
-          paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)",
-          paddingBottom: 12,
-          background: "rgba(0,0,0,0.7)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-        }}
-      >
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={processing}
-          className="w-9 h-9 rounded-xl flex items-center justify-center transition active:opacity-60 disabled:opacity-40"
-          style={{ background: "rgba(255,255,255,0.12)" }}
-        >
-          <X className="w-5 h-5 text-white" />
-        </button>
-        <h2 className="flex-1 font-semibold text-white text-center" style={{ fontSize: 16 }}>
-          Bild zuschneiden
-        </h2>
-        {/* Spacer to center title */}
-        <div className="w-9" />
-      </div>
-
-      {/* Crop area */}
-      <div className="flex-1 relative" style={{ touchAction: "none" }}>
-        <Cropper
-          image={imageSrc}
-          crop={crop}
-          zoom={zoom}
-          aspect={1}
-          cropShape="round"
-          showGrid={false}
-          onCropChange={setCrop}
-          onZoomChange={setZoom}
-          onCropComplete={(_, areaPixels) => setCroppedAreaPixels(areaPixels)}
-          style={{
-            containerStyle: { background: "#000" },
-            cropAreaStyle: {
-              border: "2px solid rgba(255,255,255,0.85)",
-              boxShadow: "0 0 0 9999px rgba(0,0,0,0.82)",
-            },
-          }}
-        />
-      </div>
-
-      {/* Zoom slider */}
-      <div
-        className="flex items-center gap-3 px-6 flex-shrink-0"
-        style={{ paddingTop: 16, paddingBottom: 8, background: "rgba(0,0,0,0.7)" }}
-      >
-        <span className="text-white/50 text-sm select-none">−</span>
-        <input
-          type="range"
-          min={1}
-          max={3}
-          step={0.01}
-          value={zoom}
-          onChange={(e) => setZoom(Number(e.target.value))}
-          className="flex-1"
-          style={{ accentColor: "var(--accent)" }}
-        />
-        <span className="text-white/50 text-sm select-none">+</span>
-      </div>
-
-      {/* Bottom buttons */}
-      <div
-        className="flex gap-3 px-4 flex-shrink-0"
-        style={{
-          paddingTop: 12,
-          paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 20px)",
-          background: "rgba(0,0,0,0.7)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-        }}
-      >
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={processing}
-          className="flex-1 py-3 rounded-2xl font-semibold text-sm transition active:scale-95 disabled:opacity-40"
-          style={{
-            background: "rgba(255,255,255,0.15)",
-            color: "#fff",
-            minHeight: 50,
-          }}
-        >
-          Abbrechen
-        </button>
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={processing || !croppedAreaPixels}
-          className="flex-1 py-3 rounded-2xl font-semibold text-sm text-white transition active:scale-95 disabled:opacity-40"
-          style={{
-            background: "var(--accent)",
-            minHeight: 50,
-          }}
-        >
-          {processing ? (
-            <Loader2 className="w-5 h-5 animate-spin mx-auto" />
-          ) : (
-            "Übernehmen"
-          )}
-        </button>
-      </div>
-    </motion.div>
-  );
-}
 
 // ── Avatar Upload ────────────────────────────────────────────────��
 
@@ -351,8 +151,11 @@ function AvatarUpload({
       {/* Crop overlay */}
       <AnimatePresence>
         {cropSrc && (
-          <CropScreen
+          <FreeCropOverlay
             imageSrc={cropSrc}
+            title="Profilbild zuschneiden"
+            confirmLabel="Übernehmen"
+            showRotation={false}
             onCancel={handleCropCancel}
             onConfirm={handleCropConfirm}
           />

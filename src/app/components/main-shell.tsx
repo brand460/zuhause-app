@@ -17,6 +17,7 @@ import { KochenScreen } from "./kochen/kochen-screen";
 import { ThemeColorProvider } from "./ui/theme-color-context";
 import { setupPushForUser } from "./onesignal";
 import { apiFetch } from "./supabase-client";
+import { useSessionState } from "./ui/use-session-state";
 
 type TabId = "kalender" | "einkaufen" | "listen" | "kochen" | "mehr";
 
@@ -49,7 +50,7 @@ function PlaceholderScreen({ title }: { title: string }) {
 
 export function MainShell() {
   const { signOut, user, householdId } = useAuth();
-  const [activeTab, setActiveTab] = useState<TabId>("einkaufen");
+  const [activeTab, setActiveTab] = useSessionState<TabId>("app_active_tab", "einkaufen");
   const [einkaufenCount, setEinkaufenCount] = useState(0);
   // stableHeight removed — layout is now CSS-only, no JS-driven height
 
@@ -140,7 +141,7 @@ export function MainShell() {
   }, []);
 
   // Track which tabs have been visited — only mount their component once visited
-  const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(new Set(["einkaufen"]));
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(new Set(["einkaufen", activeTab]));
 
   const handleTabChange = (tab: TabId) => {
     setActiveTab(tab);

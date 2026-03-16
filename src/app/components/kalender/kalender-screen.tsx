@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useSessionState } from "../ui/use-session-state";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft,
@@ -540,8 +541,8 @@ export function KalenderScreen({ onNavigate, openEventId, onDeepLinkHandled }: {
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => obs.disconnect();
   }, []);
-  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
-  const [showEditor, setShowEditor] = useState(false);
+  const [editingEvent, setEditingEvent] = useSessionState<CalendarEvent | null>("kalender_editing_event", null);
+  const [showEditor, setShowEditor] = useSessionState<boolean>("kalender_show_editor", false);
   const [showRecurringPrompt, setShowRecurringPrompt] = useState(false);
   const [pendingEdit, setPendingEdit] = useState<{ event: CalendarEvent; dateKey: string } | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

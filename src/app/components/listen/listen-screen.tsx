@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
+import { useSessionState } from "../ui/use-session-state";
 import {
   Menu,
   ChevronRight,
@@ -164,10 +165,9 @@ const DEFAULT_CONTENTS: PageContents = Object.fromEntries(
 
 export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}) {
   const { householdId } = useAuth();
-  const LS_LAST_PAGE_KEY = `last_open_page_${householdId}`;
   const [pages, setPages] = useState<Page[]>([]);
   const [pageContents, setPageContents] = useState<PageContents>({});
-  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [activePageId, setActivePageId] = useSessionState<string | null>("listen_active_page", null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedPages, setExpandedPages] = useState<Set<string>>(new Set());
@@ -235,7 +235,7 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
       if (loadedPages.length === 0 && isInitial) {
         setPages(DEFAULT_PAGES);
         setPageContents(DEFAULT_CONTENTS);
-        const savedId = localStorage.getItem(LS_LAST_PAGE_KEY);
+        const savedId = sessionStorage.getItem("listen_active_page");
         const initialId = (savedId && DEFAULT_PAGES.some(p => p.id === savedId)) ? savedId : "p1";
         setActivePageId(initialId);
         saveData(DEFAULT_PAGES, DEFAULT_CONTENTS);
@@ -251,7 +251,7 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
         setPages(loadedPages);
         setPageContents(contents);
         if (isInitial) {
-          const savedId = localStorage.getItem(LS_LAST_PAGE_KEY);
+          const savedId = sessionStorage.getItem("listen_active_page");
           const restoredId = (savedId && loadedPages.some(p => p.id === savedId)) ? savedId : loadedPages[0]?.id || null;
           setActivePageId(restoredId);
           // Alle Seiten mit Unterseiten beim ersten Laden aufklappen
@@ -269,7 +269,7 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
       if (isInitial) {
         setPages(DEFAULT_PAGES);
         setPageContents(DEFAULT_CONTENTS);
-        const savedId = localStorage.getItem(LS_LAST_PAGE_KEY);
+        const savedId = sessionStorage.getItem("listen_active_page");
         const initialId = (savedId && DEFAULT_PAGES.some(p => p.id === savedId)) ? savedId : "p1";
         setActivePageId(initialId);
         setLoaded(true);
@@ -280,13 +280,6 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
   useEffect(() => {
     loadListenData(true);
   }, []);
-
-  // ── Persist last opened page to localStorage ──
-  useEffect(() => {
-    if (activePageId && loaded) {
-      localStorage.setItem(LS_LAST_PAGE_KEY, activePageId);
-    }
-  }, [activePageId, loaded]);
 
   // ── Deep-link: open a specific page when the prop changes ──
   useEffect(() => {

@@ -62,6 +62,7 @@
     "react-easy-crop": "^5.5.6",
     "react-helmet-async": "^3.0.0",
     "react-hook-form": "7.55.0",
+    "react-image-crop": "^11.0.10",
     "react-popper": "2.3.0",
     "react-resizable-panels": "2.1.7",
     "react-responsive-masonry": "2.7.1",

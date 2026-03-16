@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useSessionState } from "../ui/use-session-state";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
-import Cropper from "react-easy-crop";
-import type { Area, Point } from "react-easy-crop";
+import { FreeCropOverlay } from "./free-crop-overlay";
 import {
   Plus, Search, Heart, Clock, ChevronLeft, Star, Minus, ExternalLink,
   Pencil, X, Loader2, Link2, FileText, Camera, Trash2,
@@ -164,9 +164,9 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   const [loading, setLoading] = useState(true);
 
   // Views
-  const [activeView, setActiveView] = useState<"main" | "detail" | "edit">("main");
-  const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
-  const [editRecipe, setEditRecipe] = useState<Recipe | null>(null);
+  const [activeView, setActiveView] = useSessionState<"main" | "detail" | "edit">("kochen_active_view", "main");
+  const [selectedRecipeId, setSelectedRecipeId] = useSessionState<string | null>("kochen_selected_recipe_id", null);
+  const [editRecipe, setEditRecipe] = useSessionState<Recipe | null>("kochen_edit_recipe", null);
 
   // Kochbuch filters
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("Alle");
@@ -180,9 +180,6 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
 
   // Photo extraction workflow
   const [photoCropSrc, setPhotoCropSrc] = useState<string | null>(null);
-  const [photoCrop, setPhotoCrop] = useState<Point>({ x: 0, y: 0 });
-  const [photoZoom, setPhotoZoom] = useState(1);
-  const [photoCroppedArea, setPhotoCroppedArea] = useState<Area | null>(null);
   const [photoExtracting, setPhotoExtracting] = useState(false);
   const photoFileRef = useRef<HTMLInputElement>(null);
   const [pendingPhotoUpload, setPendingPhotoUpload] = useState(false);
@@ -216,7 +213,7 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   // Segmented control
-  const [kochenTab, setKochenTab] = useState<"rezepte" | "wochenplaner">("rezepte");
+  const [kochenTab, setKochenTab] = useSessionState<"rezepte" | "wochenplaner">("kochen_tab", "rezepte");
 
   // ── Custom recipe categories (user-defined, lazy-persisted) ────────
   const [customRecipeCategories, setCustomRecipeCategories] = useState<string[]>([]);
@@ -631,72 +628,14 @@ export function KochenScreen({ openRecipeId }: { openRecipeId?: string | null } 
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
       setPhotoCropSrc(dataUrl);
-      setPhotoCrop({ x: 0, y: 0 });
-      setPhotoZoom(1);
-      setPhotoCroppedArea(null);
     };
     reader.readAsDataURL(file);
     // Reset input so same file can be selected again
     e.target.value = "";
   };
 
-  // ── Photo extraction via Claude Vision ──────────────────────────────
-  const handlePhotoExtract = async () => {
-    if (!photoCropSrc || !photoCroppedArea) return;
-
-    const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-    if (!anthropicKey) {
-      toast.error("VITE_ANTHROPIC_API_KEY nicht gesetzt");
-      setPhotoCropSrc(null);
-      return;
-    }
-
-    const croppedSrc = photoCropSrc;
-    const croppedArea = photoCroppedArea;
-    setPhotoCropSrc(null);
-    setPhotoExtracting(true);
-
-    try {
-      // Crop the image
-      const croppedBlob = await getCroppedImg(croppedSrc, croppedArea);
-      // Compress for Claude (higher res for text readability)
-      const compressedBlob = await compressImage(new File([croppedBlob], "photo.jpg", { type: "image/jpeg" }), 1200);
-      // Convert to base64
-      const base64Image = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(",")[1]); // strip data:image/jpeg;base64,
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(compressedBlob);
-      });
-
-      // Call Claude Vision API with 30s timeout
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
-
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": anthropicKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          messages: [{
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: "image/jpeg", data: base64Image }
-              },
-              {
-                type: "text",
-                text: `Extrahiere das Rezept aus diesem Bild. Antworte NUR mit einem JSON-Objekt, kein weiterer Text, keine Markdown-Backticks.
+  // ── Photo extraction prompt for Claude Vision ──
+  const photoExtractionPrompt = `Extrahiere das Rezept aus diesem Bild. Antworte NUR mit einem JSON-Objekt, kein weiterer Text, keine Markdown-Backticks.
 Format:
 {
   "title": "Rezeptname",
@@ -714,70 +653,7 @@ Regeln:
 - Bei Untergruppen (z.B. "Für das Topping:") den Gruppennamen als Prefix: "Topping: Kirschtomaten"
 - Alternativen (z.B. "Butter oder Öl") → erste Option nehmen
 - Schritte vollständig extrahieren, auch wenn mehrzeilig
-- Falls kein Rezept erkennbar: { "error": "Kein Rezept gefunden" }`
-              }
-            ]
-          }]
-        }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error("Claude API error:", errText);
-        throw new Error("API-Fehler");
-      }
-
-      const data = await response.json();
-      const text = data.content?.[0]?.text || "";
-      // Parse JSON (strip potential markdown backticks just in case)
-      const cleanText = text.replace(/^```json?\n?/i, "").replace(/\n?```$/i, "").trim();
-      const parsed = JSON.parse(cleanText);
-
-      if (parsed.error) {
-        toast.error("Kein Rezept erkannt — bitte nochmal versuchen");
-        return;
-      }
-
-      // Build recipe object (same logic as URL import)
-      const capitalizeFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-      const newRecipe: Recipe = {
-        ...emptyRecipe(),
-        ...parsed,
-        id: genId(),
-        household_id: householdId || "",
-        created_at: new Date().toISOString(),
-        rating: 0,
-        comment: "",
-        is_favorite: false,
-        image_url: null,
-        source_url: "",
-        description: "",
-        categories: (parsed.categories || []).map(capitalizeFirst),
-        ingredients: (parsed.ingredients && parsed.ingredients.length > 0)
-          ? parsed.ingredients
-          : [{ name: "", quantity: "", unit: "" }],
-        steps: parsed.steps || [],
-      };
-
-      setEditRecipe(newRecipe);
-      setActiveView("edit");
-      setShowAddSheet(false);
-      pushBack(() => { setEditRecipe(null); setActiveView("main"); });
-      toast.success("Rezept erkannt — bitte prüfen ✅");
-    } catch (err: any) {
-      console.error("Photo extraction error:", err);
-      if (err?.name === "AbortError") {
-        toast.error("Zeitüberschreitung — bitte nochmal versuchen");
-      } else {
-        toast.error("Rezeptextraktion fehlgeschlagen");
-      }
-    } finally {
-      setPhotoExtracting(false);
-    }
-  };
+- Falls kein Rezept erkennbar: { "error": "Kein Rezept gefunden" }`;
 
   // ── Ingredients to shopping list ───────────────────────────────────
 
@@ -1899,72 +1775,94 @@ Regeln:
       {/* ── Photo Crop Screen (full-page overlay) ── */}
       <AnimatePresence>
         {photoCropSrc && !photoExtracting && (
-          <motion.div
-            className="fixed inset-0 z-[3000] flex flex-col"
-            style={{ background: "#000", touchAction: "none" }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            {/* Header */}
-            <div
-              className="flex items-center justify-center px-4 flex-shrink-0"
-              style={{ paddingTop: "max(env(safe-area-inset-top), 16px)", paddingBottom: 8 }}
-            >
-              <span className="text-white text-sm font-semibold">Schneide den Rezeptbereich aus</span>
-            </div>
-
-            {/* Cropper area — free aspect ratio, explicit height for react-easy-crop */}
-            <div
-              className="relative flex-shrink-0"
-              style={{ height: "calc(100dvh - 120px)", position: "relative" }}
-            >
-              <Cropper
-                image={photoCropSrc}
-                crop={photoCrop}
-                zoom={photoZoom}
-                aspect={undefined}
-                cropShape="rect"
-                showGrid={true}
-                onCropChange={setPhotoCrop}
-                onZoomChange={setPhotoZoom}
-                onCropComplete={(_croppedArea, pixels) => setPhotoCroppedArea(pixels)}
-                style={{
-                  containerStyle: { background: "#000" },
-                  mediaStyle: {},
-                  cropAreaStyle: {},
-                }}
-              />
-            </div>
-
-            {/* Zoom hint */}
-            <div className="flex justify-center pb-2 flex-shrink-0">
-              <span className="text-white/50 text-xs">Zwei Finger zum Zoomen</span>
-            </div>
-
-            {/* Buttons */}
-            <div
-              className="flex gap-3 px-4 flex-shrink-0"
-              style={{ paddingBottom: "max(env(safe-area-inset-bottom), 24px)", paddingTop: 12 }}
-            >
-              <button
-                className="flex-1 py-3 rounded-2xl text-sm font-semibold"
-                style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
-                onClick={() => setPhotoCropSrc(null)}
-              >
-                Abbrechen
-              </button>
-              <button
-                className="flex-1 py-3 rounded-2xl text-sm font-semibold flex items-center justify-center gap-2"
-                style={{ background: "var(--color-accent)", color: "#fff" }}
-                onClick={handlePhotoExtract}
-              >
-                <Camera className="w-4 h-4" />
-                Extrahieren
-              </button>
-            </div>
-          </motion.div>
+          <FreeCropOverlay
+            imageSrc={photoCropSrc}
+            title="Schneide den Rezeptbereich aus"
+            confirmLabel="Extrahieren"
+            confirmIcon={<Camera className="w-4 h-4" />}
+            showRotation={true}
+            onCancel={() => setPhotoCropSrc(null)}
+            onConfirm={async (blob) => {
+              const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+              if (!anthropicKey) {
+                toast.error("VITE_ANTHROPIC_API_KEY nicht gesetzt");
+                setPhotoCropSrc(null);
+                return;
+              }
+              setPhotoCropSrc(null);
+              setPhotoExtracting(true);
+              try {
+                // Compress for Claude (higher res for text readability)
+                const compressedBlob = await compressImage(new File([blob], "photo.jpg", { type: "image/jpeg" }), 1200);
+                const base64Image = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const result = reader.result as string;
+                    resolve(result.split(",")[1]);
+                  };
+                  reader.onerror = reject;
+                  reader.readAsDataURL(compressedBlob);
+                });
+                // Call Claude Vision API
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 30000);
+                const response = await fetch("https://api.anthropic.com/v1/messages", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "x-api-key": anthropicKey,
+                    "anthropic-version": "2023-06-01",
+                    "anthropic-dangerous-direct-browser-access": "true",
+                  },
+                  body: JSON.stringify({
+                    model: "claude-sonnet-4-20250514",
+                    max_tokens: 2000,
+                    messages: [{
+                      role: "user",
+                      content: [
+                        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Image } },
+                        { type: "text", text: photoExtractionPrompt },
+                      ],
+                    }],
+                  }),
+                  signal: controller.signal,
+                });
+                clearTimeout(timeout);
+                if (!response.ok) throw new Error(`Claude API: ${response.status}`);
+                const result = await response.json();
+                const text = result.content?.[0]?.text || "";
+                const jsonMatch = text.match(/\{[\s\S]*\}/);
+                if (!jsonMatch) throw new Error("Kein JSON in der Antwort");
+                const parsed = JSON.parse(jsonMatch[0]);
+                const capitalizeFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+                const newRecipe: Recipe = {
+                  ...emptyRecipe(),
+                  ...parsed,
+                  id: genId(),
+                  household_id: householdId || "",
+                  created_at: new Date().toISOString(),
+                  rating: 0,
+                  comment: "",
+                  is_favorite: false,
+                  image_url: null,
+                  source_url: "",
+                  description: "",
+                  categories: (parsed.categories || []).map(capitalizeFirst),
+                  ingredients: (parsed.ingredients?.length > 0) ? parsed.ingredients : [{ name: "", quantity: "", unit: "" }],
+                  steps: parsed.steps || [],
+                };
+                setEditRecipe(newRecipe);
+                setActiveView("edit");
+                pushBack(() => { setEditRecipe(null); setActiveView("main"); });
+                toast.success("Rezept extrahiert — bitte prüfen");
+              } catch (err: any) {
+                console.error("Photo extraction error:", err);
+                toast.error(err?.message || "Extraktion fehlgeschlagen");
+              } finally {
+                setPhotoExtracting(false);
+              }
+            }}
+          />
         )}
       </AnimatePresence>
 
@@ -3129,32 +3027,7 @@ function compressImage(file: File, maxSize: number = 800): Promise<Blob> {
   });
 }
 
-// ── Crop helper: draw the cropped area onto a canvas and return JPEG blob ──
-async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
-  const image = new Image();
-  image.crossOrigin = "anonymous";
-  image.src = imageSrc;
-  await new Promise<void>((resolve, reject) => {
-    image.onload = () => resolve();
-    image.onerror = () => reject(new Error("Bild konnte nicht geladen werden"));
-  });
-  const canvas = document.createElement("canvas");
-  canvas.width = pixelCrop.width;
-  canvas.height = pixelCrop.height;
-  const ctx = canvas.getContext("2d")!;
-  ctx.drawImage(
-    image,
-    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
-    0, 0, pixelCrop.width, pixelCrop.height,
-  );
-  return new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob(
-      (blob) => blob ? resolve(blob) : reject(new Error("toBlob fehlgeschlagen")),
-      "image/jpeg",
-      0.85,
-    )
-  );
-}
+
 
 // ══════════════════════════════════════════════════════════════════════
 // RECIPE EDIT VIEW
@@ -3186,9 +3059,6 @@ function RecipeEditView({
 
   // ── Crop state ──
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
-  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
 
   // ── Ingredient autocomplete state ──
   const [activeIngIdx, setActiveIngIdx] = useState<number | null>(null);
@@ -3379,9 +3249,6 @@ function RecipeEditView({
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
       setCropImageSrc(dataUrl);
-      setCrop({ x: 0, y: 0 });
-      setZoom(1);
-      setCroppedAreaPixels(null);
     };
     reader.readAsDataURL(file);
   };
@@ -3401,17 +3268,14 @@ function RecipeEditView({
     return `${publicUrl}?t=${Date.now()}`;
   };
 
-  // ── Crop confirm: crop → compress → upload ──
-  const handleCropConfirm = async () => {
-    if (!cropImageSrc || !croppedAreaPixels) return;
-    const src = cropImageSrc;
+  // ── Crop confirm: FreeCropOverlay delivers the blob directly ──
+  const handleCropConfirm = async (blob: Blob) => {
     setCropImageSrc(null);
     setUploading(true);
     try {
-      const blob = await getCroppedImg(src, croppedAreaPixels);
       const publicUrl = await uploadCroppedBlob(blob);
       update({ image_url: publicUrl });
-      toast.success("Bild gespeichert ✅");
+      toast.success("Bild gespeichert");
     } catch (err: any) {
       console.error("[RecipeEdit] Crop upload error:", err);
       toast.error(err?.message || "Upload fehlgeschlagen");
@@ -3919,66 +3783,14 @@ function RecipeEditView({
       {/* ── Crop Screen (full-page overlay, above all other drawers) ── */}
       <AnimatePresence>
         {cropImageSrc && (
-          <motion.div
-            className="fixed inset-0 z-[3000] flex flex-col"
-            style={{ background: "#000", touchAction: "none" }}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            {/* Header */}
-            <div
-              className="flex items-center justify-center px-4 pt-[env(safe-area-inset-top)] flex-shrink-0"
-              style={{ paddingTop: "max(env(safe-area-inset-top), 16px)", paddingBottom: 12 }}
-            >
-              <span className="text-white text-sm font-semibold">Bild zuschneiden</span>
-            </div>
-
-            {/* Cropper area */}
-            <div className="relative flex-1">
-              <Cropper
-                image={cropImageSrc}
-                crop={crop}
-                zoom={zoom}
-                aspect={4 / 5}
-                onCropChange={setCrop}
-                onZoomChange={setZoom}
-                onCropComplete={(_croppedArea, pixels) => setCroppedAreaPixels(pixels)}
-                style={{
-                  containerStyle: { background: "#000" },
-                  mediaStyle: {},
-                  cropAreaStyle: {},
-                }}
-              />
-            </div>
-
-            {/* Zoom hint */}
-            <div className="flex justify-center pb-2 flex-shrink-0">
-              <span className="text-white/50 text-xs">Zwei Finger zum Zoomen</span>
-            </div>
-
-            {/* Buttons */}
-            <div
-              className="flex gap-3 px-4 pb-[env(safe-area-inset-bottom)] flex-shrink-0"
-              style={{ paddingBottom: "max(env(safe-area-inset-bottom), 24px)", paddingTop: 12 }}
-            >
-              <button
-                className="flex-1 py-3 rounded-2xl text-sm font-semibold"
-                style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
-                onClick={() => setCropImageSrc(null)}
-              >
-                Abbrechen
-              </button>
-              <button
-                className="flex-1 py-3 rounded-2xl text-sm font-semibold"
-                style={{ background: "var(--color-accent)", color: "#fff" }}
-                onClick={handleCropConfirm}
-              >
-                Übernehmen
-              </button>
-            </div>
-          </motion.div>
+          <FreeCropOverlay
+            imageSrc={cropImageSrc}
+            title="Bild zuschneiden"
+            confirmLabel="Übernehmen"
+            showRotation={true}
+            onCancel={() => setCropImageSrc(null)}
+            onConfirm={handleCropConfirm}
+          />
         )}
       </AnimatePresence>
 
@@ -4024,9 +3836,6 @@ function RecipeEditView({
                   setShowUrlInput(false);
                   setImageUrlDraft("");
                   setCropImageSrc(urlSrc);
-                  setCrop({ x: 0, y: 0 });
-                  setZoom(1);
-                  setCroppedAreaPixels(null);
                 }}
                 className="w-full py-2.5 rounded-xl bg-accent text-white text-sm font-medium disabled:opacity-40"
               >
