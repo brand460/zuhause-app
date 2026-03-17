@@ -299,10 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log("[Auth] Event:", event, "session:", !!s);
 
       if (event === "TOKEN_REFRESHED" && s) {
-        // Persist the refreshed token immediately — no loading state change
-        try {
-          localStorage.setItem("zuhause-supabase-auth", JSON.stringify(s));
-        } catch (_) { /* storage full or unavailable */ }
+        // Session already persisted by the GoTrueClient storage adapter — nothing to do here.
         setSession(s);
         setUser(s.user ?? null);
         return;

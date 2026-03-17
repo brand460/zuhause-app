@@ -164,13 +164,17 @@ function emptyRecipe(): Recipe {
 // MAIN KOCHEN SCREEN
 // ══════════════════════════════════════════════════════════════════════
 
-export function KochenScreen({ openRecipeId, sharedText, onSharedTextConsumed, onRegisterReset, showTextImport: showTextImportProp = false, onShowTextImportChange }: {
+export function KochenScreen({ openRecipeId, sharedText, onSharedTextConsumed, onRegisterReset, showTextImport: showTextImportProp = false, onShowTextImportChange, sharedUrl, onSharedUrlConsumed, showUrlImport: showUrlImportProp = false, onShowUrlImportChange }: {
   openRecipeId?: string | null;
   sharedText?: string | null;
   onSharedTextConsumed?: () => void;
   onRegisterReset?: (fn: () => void) => void;
   showTextImport?: boolean;
   onShowTextImportChange?: (v: boolean) => void;
+  sharedUrl?: string | null;
+  onSharedUrlConsumed?: () => void;
+  showUrlImport?: boolean;
+  onShowUrlImportChange?: (v: boolean) => void;
 } = {}) {
   const { householdId, householdMembers } = useAuth();
   // ── State ──────────────────────────────────────────────────────────
@@ -227,7 +231,9 @@ export function KochenScreen({ openRecipeId, sharedText, onSharedTextConsumed, o
 
   // Bottom sheets / modals
   const [showAddSheet, setShowAddSheet] = useState(false);
-  const [showUrlImport, setShowUrlImport] = useState(false);
+  // showUrlImport is controlled from MainShell — use prop as source of truth
+  const showUrlImport = showUrlImportProp;
+  const setShowUrlImport = (v: boolean) => onShowUrlImportChange?.(v);
   const [urlInput, setUrlInput] = useState("");
   const [importing, setImporting] = useState(false);
   // showTextImport is controlled from MainShell — use prop as source of truth
@@ -330,6 +336,18 @@ export function KochenScreen({ openRecipeId, sharedText, onSharedTextConsumed, o
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sharedText]);
+
+  // ── Shared URL from Web Share Target ──────────────────────────────
+  // showUrlImport=true wird bereits von MainShell gesetzt (via onShowUrlImportChange);
+  // hier nur noch urlInput befüllen und AddSheet schließen.
+  useEffect(() => {
+    if (sharedUrl) {
+      setUrlInput(sharedUrl);
+      setShowAddSheet(false);
+      onSharedUrlConsumed?.();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedUrl]);
 
   // ── Load data ──────────────────────────────────────────────────────
 

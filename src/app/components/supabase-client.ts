@@ -4,7 +4,7 @@ import { projectId, publicAnonKey } from "/utils/supabase/info";
 const supabaseUrl = `https://${projectId}.supabase.co`;
 
 // Singleton: prevent duplicate GoTrueClient instances during HMR.
-const GLOBAL_KEY = "__supabase_client_v2__" as const;
+const GLOBAL_KEY = "__tuli_supabase_client_v1__" as const;
 export const supabase: ReturnType<typeof createClient> =
   (globalThis as any)[GLOBAL_KEY] ??
   ((globalThis as any)[GLOBAL_KEY] = createClient(supabaseUrl, publicAnonKey, {
@@ -18,7 +18,13 @@ export const supabase: ReturnType<typeof createClient> =
         setItem: (key, value) => localStorage.setItem(key, value),
         removeItem: (key) => localStorage.removeItem(key),
       },
-      storageKey: 'zuhause-supabase-auth',
+      storageKey: 'tuli-supabase-auth',
+      // Bypass the Navigator Locks API to prevent the
+      // "lock was not released within 5000ms" warning caused by HMR
+      // reloads or stale service-worker contexts holding the lock.
+      // Concurrent auth operations within a single tab are still
+      // serialised by the GoTrueClient's in-memory processLock.
+      lock: async (_name: string, _acquireTimeout: number, fn: () => Promise<any>) => fn(),
     },
   }));
 

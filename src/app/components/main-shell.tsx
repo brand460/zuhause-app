@@ -171,13 +171,23 @@ export function MainShell() {
   // ── Web Share Target — geteilten Text empfangen ─────────────────────
   const [sharedText, setSharedText] = useState<string | null>(null);
   const [showTextImport, setShowTextImport] = useState(false);
+  const [sharedUrl, setSharedUrl] = useState<string | null>(null);
+  const [showUrlImport, setShowUrlImport] = useState(false);
 
   // Ref auf handleTabChange damit der SW-Listener nie eine stale Closure sieht
   const handleTabChangeRef = useRef<(tab: TabId) => void>(() => {});
 
-  const activateShare = useCallback((text: string) => {
-    setSharedText(text);
-    setShowTextImport(true);
+  // URL-Erkennung: TikTok/Instagram/etc. → URL-Import, WhatsApp-Text → Text-Import
+  const handleSharedContent = useCallback((text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const urls = text.match(urlRegex);
+    if (urls && urls.length > 0) {
+      setSharedUrl(urls[0]);
+      setShowUrlImport(true);
+    } else {
+      setSharedText(text);
+      setShowTextImport(true);
+    }
     handleTabChangeRef.current('kochen');
   }, []);
 
@@ -185,7 +195,7 @@ export function MainShell() {
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'SHARE_RECEIVED' && event.data.text) {
-        activateShare(event.data.text);
+        handleSharedContent(event.data.text);
       }
     };
     navigator.serviceWorker?.addEventListener('message', handleMessage);
@@ -204,7 +214,7 @@ export function MainShell() {
           const text = await pending.text();
           if (text) {
             await cache.delete('/pending-share');
-            activateShare(text);
+            handleSharedContent(text);
           }
         }
       } catch (err) {
@@ -322,6 +332,10 @@ export function MainShell() {
                 onSharedTextConsumed={() => setSharedText(null)}
                 showTextImport={showTextImport}
                 onShowTextImportChange={setShowTextImport}
+                sharedUrl={sharedUrl}
+                onSharedUrlConsumed={() => setSharedUrl(null)}
+                showUrlImport={showUrlImport}
+                onShowUrlImportChange={setShowUrlImport}
                 onRegisterReset={handleRegisterReset}
               />
             </div>
