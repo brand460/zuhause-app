@@ -6,9 +6,9 @@
 //   Schüttgut/Pulver → g  (Gewürze → TL)
 //   Streichfähiges/Festes in Mengen → g
 //   Löffelware → EL
-//   Zählbares → "" (Stück)
+//   Zählbares → "" (leerer String — NIEMALS "Stück", "stk", "St.", "Packung", "Glas" oder "Dose")
 //   Backzutaten in kleinen Mengen → TL oder Päckchen
-//   Default → "" (Stück)
+//   Default → "" (leer)
 // ══════════════════════════════════════════════════════════════════════
 
 export const INGREDIENT_UNITS: Record<string, string> = {

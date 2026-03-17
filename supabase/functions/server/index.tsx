@@ -1142,6 +1142,41 @@ app.post("/make-server-2a26506b/import-recipe", async (c) => {
     }
 
     // Call Claude API
+    const recipeSystemPrompt = [
+      "Du bist ein Rezept-Extraktor. Extrahiere aus dem folgenden Web-Inhalt ein Rezept als JSON.",
+      "",
+      "SPRACHE & ÜBERSETZUNG (PFLICHT):",
+      "- Erkenne automatisch in welcher Sprache das Rezept vorliegt.",
+      "- Ist die Sprache NICHT Deutsch: übersetze ALLE Textfelder vollständig ins Deutsche — Titel, Beschreibung, Zutatennamen, Zubereitungsschritte, Kategorien.",
+      '- Zutatennamen auf deutsche Supermarkt-Standardbezeichnungen: "all-purpose flour"→"Mehl (Type 405)", "bread flour"→"Mehl (Type 550)", "heavy cream"/"heavy whipping cream"→"Sahne", "half and half"→"Halbfette Milch", "scallions"/"green onions"→"Frühlingszwiebeln", "cilantro"→"Koriander", "eggplant"→"Aubergine", "bell pepper"→"Paprika", "butternut squash"→"Butternusskürbis", "sweet potato"→"Süßkartoffel", "ground beef"→"Rinderhack", "chicken breast"→"Hähnchenbrust", "shrimp"→"Garnelen", "cornstarch"→"Maisstärke", "baking soda"→"Natron", "baking powder"→"Backpulver", "vanilla extract"→"Vanilleextrakt", "powdered sugar"→"Puderzucker", "brown sugar"→"brauner Zucker".',
+      '- Maßeinheiten umrechnen: "cup"/"cups"→"ml" (1 cup=240ml, ½ cup=120ml, ¼ cup=60ml), "oz"→"g" (1 oz=28g), "lb"/"lbs"→"g" (1 lb=454g; >500g in kg angeben), "tbsp"→"EL", "tsp"→"TL", "stick butter"→quantity:"125", unit:"g", name:"Butter". Temperaturen in Schritten: °F→°C ((°F−32)×5/9, auf 5°C runden).',
+      "",
+      "JSON-Format:",
+      "{",
+      '  "title": "",',
+      '  "description": "",',
+      '  "prep_time_minutes": null,',
+      '  "cook_time_minutes": null,',
+      '  "servings": null,',
+      '  "ingredients": [{"name": "", "quantity": "", "unit": ""}],',
+      '  "steps": [{"position": 1, "description": ""}],',
+      '  "image_url": null,',
+      '  "categories": [],',
+      '  "source_url": ""',
+      "}",
+      "",
+      "Regeln für Zutaten:",
+      "- Extrahiere ALLE Zutaten inklusive optionaler Zutaten, Toppings, Saucen, Garnituren und Untergruppen — lasse keine einzige Zutat weg.",
+      '- Wenn Zutaten in Gruppen unterteilt sind (z.B. "Für den Teig:", "Toppings:", "Sauce:"), füge alle Gruppen flach als einzelne Zutaten in die ingredients-Liste ein — ignoriere Gruppenüberschriften, behalte aber alle Zutaten daraus.',
+      '- Zutaten die als "optional" markiert sind nicht ignorieren — extrahiere sie mit dem Suffix " (optional)" am Ende des Namens.',
+      '- Bei Alternativzutaten (z.B. "Bulgur oder Quinoa") nimm die erste genannte Option als Hauptzutat.',
+      '- Mengenangaben: quantity darf NUR echte Mengen enthalten — Zahlen, Brüche (½, ¼, ¾), Dezimalzahlen oder Ranges (1-2). Unspezifische Angaben wie "nach Geschmack", "nach Belieben", "etwas", "wenig", "reichlich", "optional" dürfen NICHT in quantity stehen — setze quantity auf "" (leerer String).',
+      '- Zählbare Artikel (z.B. 2 Zwiebeln, 3 Eier, 1 Zitrone) → unit leer lassen (unit: ""), Zahl als quantity.',
+      "- NIEMALS unit: Stück, stk, St., Packung, Glas oder Dose verwenden.",
+      "- Nur echte Maßeinheiten: g, kg, ml, l, EL, TL, Prise, Bund, Scheibe, Zweig.",
+      "",
+      "Felder die du nicht finden kannst setzt du auf null. Antworte NUR mit dem JSON.",
+    ].join("\n");
     const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -1152,13 +1187,12 @@ app.post("/make-server-2a26506b/import-recipe", async (c) => {
       body: JSON.stringify({
         model: "claude-sonnet-4-20250514",
         max_tokens: 2048,
-        system: `Du bist ein Rezept-Extraktor. Extrahiere aus dem folgenden Web-Inhalt ein Rezept als JSON.\n\nSPRACHE & ÜBERSETZUNG (PFLICHT):\n- Erkenne automatisch in welcher Sprache das Rezept vorliegt.\n- Ist die Sprache NICHT Deutsch: übersetze ALLE Textfelder vollständig ins Deutsche — Titel, Beschreibung, Zutatennamen, Zubereitungsschritte, Kategorien.\n- Zutatennamen auf deutsche Supermarkt-Standardbezeichnungen: \"all-purpose flour\"→\"Mehl (Type 405)\", \"bread flour\"→\"Mehl (Type 550)\", \"heavy cream\"/\"heavy whipping cream\"→\"Sahne\", \"half and half\"→\"Halbfette Milch\", \"scallions\"/\"green onions\"→\"Frühlingszwiebeln\", \"cilantro\"→\"Koriander\", \"eggplant\"→\"Aubergine\", \"bell pepper\"→\"Paprika\", \"butternut squash\"→\"Butternusskürbis\", \"sweet potato\"→\"Süßkartoffel\", \"ground beef\"→\"Rinderhack\", \"chicken breast\"→\"Hähnchenbrust\", \"shrimp\"→\"Garnelen\", \"cornstarch\"→\"Maisstärke\", \"baking soda\"→\"Natron\", \"baking powder\"→\"Backpulver\", \"vanilla extract\"→\"Vanilleextrakt\", \"powdered sugar\"→\"Puderzucker\", \"brown sugar\"→\"brauner Zucker\".\n- Maßeinheiten umrechnen: \"cup\"/\"cups\"→\"ml\" (1 cup=240ml, ½ cup=120ml, ¼ cup=60ml), \"oz\"→\"g\" (1 oz=28g), \"lb\"/\"lbs\"→\"g\" (1 lb=454g; >500g in kg angeben), \"tbsp\"→\"EL\", \"tsp\"→\"TL\", \"stick butter\"→quantity:\"125\", unit:\"g\", name:\"Butter\". Temperaturen in Schritten: °F→°C ((°F−32)×5/9, auf 5°C runden).\n\nJSON-Format:\n{\n  \"title\": \"\",\n  \"description\": \"\",\n  \"prep_time_minutes\": null,\n  \"cook_time_minutes\": null,\n  \"servings\": null,\n  \"ingredients\": [{\"name\": \"\", \"quantity\": \"\", \"unit\": \"\"}],\n  \"steps\": [{\"position\": 1, \"description\": \"\"}],\n  \"image_url\": null,\n  \"categories\": [],\n  \"source_url\": \"\"\n}\n\nRegeln für Zutaten:\n- Extrahiere ALLE Zutaten inklusive optionaler Zutaten, Toppings, Saucen, Garnituren und Untergruppen — lasse keine einzige Zutat weg.\n- Wenn Zutaten in Gruppen unterteilt sind (z.B. \"Für den Teig:\", \"Toppings:\", \"Sauce:\"), füge alle Gruppen flach als einzelne Zutaten in die ingredients-Liste ein — ignoriere Gruppenüberschriften, behalte aber alle Zutaten daraus.\n- Zutaten die als \"optional\" markiert sind nicht ignorieren — extrahiere sie mit dem Suffix \" (optional)\" am Ende des Namens.\n- Bei Alternativzutaten (z.B. \"Bulgur oder Quinoa\") nimm die erste genannte Option als Hauptzutat.\n- Mengenangaben: quantity darf NUR echte Mengen enthalten — Zahlen, Brüche (½, ¼, ¾), Dezimalzahlen oder Ranges (1-2). Unspezifische Angaben wie \"nach Geschmack\", \"nach Belieben\", \"etwas\", \"wenig\", \"reichlich\", \"optional\" dürfen NICHT in quantity stehen — setze quantity auf \"\" (leerer String).\n\nFelder die du nicht finden kannst setzt du auf null. Antworte NUR mit dem JSON.`,
+        system: recipeSystemPrompt,
         messages: [
           { role: "user", content: `URL: ${url}\n\nInhalt:\n${pageContent}` },
         ],
       }),
     });
-
     if (!claudeRes.ok) {
       const errText = await claudeRes.text();
       console.log("Claude API error:", errText);

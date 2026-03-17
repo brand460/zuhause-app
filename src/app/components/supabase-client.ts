@@ -13,6 +13,12 @@ export const supabase: ReturnType<typeof createClient> =
       detectSessionInUrl: false, // OAuthCallbackHandler übernimmt als einziger den exchangeCodeForSession-Aufruf
       autoRefreshToken: true,
       flowType: 'pkce',
+      storage: {
+        getItem: (key) => localStorage.getItem(key),
+        setItem: (key, value) => localStorage.setItem(key, value),
+        removeItem: (key) => localStorage.removeItem(key),
+      },
+      storageKey: 'zuhause-supabase-auth',
     },
   }));
 

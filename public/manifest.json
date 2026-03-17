@@ -10,6 +10,9 @@
   "theme_color": "#F7F7F5",
   "navigation_bar_color": "#ffffff",
   "orientation": "portrait",
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
   "icons": [
     {
       "src": "/icon-192.png",

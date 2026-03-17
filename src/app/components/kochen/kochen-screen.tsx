@@ -750,6 +750,9 @@ SPRACHE & ÜBERSETZUNG (PFLICHT):
 Extraktionsregeln:
 - Mengenangaben wie "nach Geschmack", "etwas", "nach Belieben" → quantity leer lassen
 - ALLE Zutaten extrahieren inkl. Toppings und optionale Zutaten
+- Zählbare Artikel (z.B. "2 Zwiebeln", "3 Eier", "1 Zitrone") → unit: "" (leer lassen), Zahl als quantity
+- NIEMALS unit: "Stück", "stk", "St.", "Packung", "Glas" oder "Dose" verwenden
+- Nur echte Maßeinheiten: g, kg, ml, l, EL, TL, Prise, Bund, Scheibe, Zweig
 - Falls kein Rezept erkennbar: { "error": "Kein Rezept gefunden" }
 
 Text:
@@ -850,6 +853,9 @@ Extraktionsregeln:
 - Bei Untergruppen (z.B. "Für das Topping:") den Gruppennamen als Prefix: "Topping: Kirschtomaten"
 - Alternativen (z.B. "Butter oder Öl") → erste Option nehmen
 - Schritte vollständig extrahieren, auch wenn mehrzeilig
+- Zählbare Artikel (z.B. "2 Zwiebeln", "3 Eier", "1 Zitrone") → unit: "" (leer lassen), Zahl als quantity
+- NIEMALS unit: "Stück", "stk", "St.", "Packung", "Glas" oder "Dose" verwenden
+- Nur echte Maßeinheiten: g, kg, ml, l, EL, TL, Prise, Bund, Scheibe, Zweig
 - Falls kein Rezept erkennbar: { "error": "Kein Rezept gefunden" }`;
 
   // ── Ingredients to shopping list ───────────────────────────────────

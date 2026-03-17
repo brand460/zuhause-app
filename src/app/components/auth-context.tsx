@@ -103,6 +103,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // OnboardingScreen during the brief gap between user being set and household loading.
   const [isLoadingHousehold, setIsLoadingHousehold] = useState(false);
   const profileChannelRef = useRef<RealtimeChannel | null>(null);
+  const signOutFlagRef = useRef<() => void>(() => {});
 
   // Ensure profile exists and is up-to-date with auth metadata
   async function ensureProfile(authUser: User) {
@@ -283,13 +284,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+    // Track whether the user explicitly signed out (vs unexpected SIGNED_OUT)
+    let userInitiatedSignOut = false;
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, s) => {
+      console.log("[Auth] Event:", event, "session:", !!s);
+
+      if (event === "TOKEN_REFRESHED" && s) {
+        // Persist the refreshed token immediately
+        try {
+          localStorage.setItem("zuhause-supabase-auth", JSON.stringify(s));
+        } catch (_) { /* storage full or unavailable */ }
+        setSession(s);
+        setUser(s.user ?? null);
+        return;
+      }
+
+      if (event === "SIGNED_OUT") {
+        if (userInitiatedSignOut) {
+          // User explicitly signed out — clear everything
+          userInitiatedSignOut = false;
+          setSession(null);
+          setUser(null);
+          setIsLoadingHousehold(false);
+          setProfile(null);
+          setHousehold(null);
+          setHouseholdMembers([]);
+          return;
+        }
+        // Unexpected SIGNED_OUT (e.g. token expired while in background)
+        // Try to recover the session before treating as logged out
+        console.log("[Auth] Unexpected SIGNED_OUT — attempting session recovery...");
+        try {
+          const { data, error } = await supabase.auth.refreshSession();
+          if (data?.session) {
+            console.log("[Auth] Session recovered successfully");
+            setSession(data.session);
+            setUser(data.session.user ?? null);
+            return; // recovered — don't clear state
+          }
+          console.log("[Auth] Session recovery failed:", error?.message);
+        } catch (err) {
+          console.log("[Auth] Session recovery error:", err);
+        }
+        // Recovery failed — actually sign out
+        setSession(null);
+        setUser(null);
+        setIsLoadingHousehold(false);
+        setProfile(null);
+        setHousehold(null);
+        setHouseholdMembers([]);
+        return;
+      }
+
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        // SIGNED_IN fires on every login (password, OAuth, magic link).
-        // INITIAL_SESSION fires on page load — already covered by `loading = true`
-        // from the getSession path, so no extra flag needed there.
         if (event === "SIGNED_IN") {
           setIsLoadingHousehold(true);
         }
@@ -303,6 +353,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setHouseholdMembers([]);
       }
     });
+
+    // Expose the flag setter so signOut() can mark it
+    signOutFlagRef.current = () => { userInitiatedSignOut = true; };
 
     return () => subscription.unsubscribe();
   }, []);
@@ -345,6 +398,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    // Mark the sign-out as user-initiated
+    signOutFlagRef.current();
+
     // Clean up realtime subscription
     if (profileChannelRef.current) {
       supabase.removeChannel(profileChannelRef.current);

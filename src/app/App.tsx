@@ -55,6 +55,17 @@ export default function App() {
     }
   }, []);
 
+  // Verhindere iOS Safari Page Reload beim Zurückkehren zur App
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        window.history.pushState(null, '', window.location.href);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
   // Auth is handled inside AppContent → AuthProvider
   return (
     <HelmetProvider>
