@@ -31,10 +31,11 @@ function extractToken(input: string): string {
 // ── Tuli logo (small) ────────────────────────────────────────────
 function TuliLogoSmall() {
   return (
-    <svg width="48" height="48" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="72" height="72" rx="20" fill="var(--accent)" />
-      <path d="M36 16L56 33H50V56H40V44H32V56H22V33H16L36 16Z" fill="white" fillOpacity="0.95" />
-    </svg>
+    <img
+      src="/Tuli-Logo.png"
+      alt="Tuli"
+      style={{ width: 48, height: 48, borderRadius: 12, objectFit: "cover" }}
+    />
   );
 }
 

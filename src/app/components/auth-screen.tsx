@@ -20,11 +20,13 @@ function GoogleIcon() {
 
 // ── Tuli Logo ─────────────────────────────────────────────────────
 function TuliLogo({ size = 72 }: { size?: number }) {
+  const radius = Math.round(size * (18 / 72));
   return (
-    <svg width={size} height={size} viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect width="72" height="72" rx="20" fill="var(--accent)"/>
-      <path d="M36 16L56 33H50V56H40V44H32V56H22V33H16L36 16Z" fill="white" fillOpacity="0.95"/>
-    </svg>
+    <img
+      src="/Tuli-Logo.png"
+      alt="Tuli"
+      style={{ width: size, height: size, borderRadius: radius, objectFit: "cover" }}
+    />
   );
 }
 
@@ -344,26 +346,7 @@ function AuthForm({ tab }: { tab: Tab }) {
       </button>
 
       {/* ── Google button (always, label changes) ── */}
-      <button
-        type="button"
-        disabled={googleLoading}
-        onClick={handleGoogle}
-        className="w-full font-semibold transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2.5"
-        style={{
-          background: "var(--surface)",
-          border: "1.5px solid var(--zu-border)",
-          borderRadius: "var(--radius-btn)",
-          color: "var(--text-1)",
-          minHeight: 52,
-          fontSize: 15,
-          marginTop: 12,
-        }}
-      >
-        {googleLoading
-          ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: "var(--text-3)" }} />
-          : <GoogleIcon />}
-        {isRegister ? "Mit Google registrieren" : "Mit Google anmelden"}
-      </button>
+      
     </form>
   );
 }
