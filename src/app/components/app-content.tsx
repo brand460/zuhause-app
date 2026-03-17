@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { AuthProvider, useAuth } from "./auth-context";
 import { AuthScreen } from "./auth-screen";
 import { OnboardingScreen } from "./onboarding-screen";
@@ -43,13 +43,17 @@ function AppRouter() {
   // Capture invite token once on mount; survives auth flow via state
   const [pendingToken] = useState<string | null>(extractInviteFromUrl);
 
+  // Track whether we have ever finished the initial load.
+  // Once true, we never show the splash again — even if isLoadingHousehold
+  // briefly becomes true on app-resume / token-refresh.
+  const hasLoadedOnce = useRef(false);
+  if (!loading && !isLoadingHousehold) {
+    hasLoadedOnce.current = true;
+  }
+
   // ── Loading splash ─────────────────────────────────────────
-  // Show spinner while:
-  //  • initial auth check is still running (loading)
-  //  • user just logged in and household check is in-flight (isLoadingHousehold)
-  //    → prevents the OnboardingScreen from flashing during the gap between
-  //      user being set and loadProfile completing.
-  if (loading || isLoadingHousehold) {
+  // Show spinner only during the very first auth check, never on resume.
+  if ((loading || isLoadingHousehold) && !hasLoadedOnce.current) {
     return (
       <div
         className="flex flex-col items-center justify-center font-sans"

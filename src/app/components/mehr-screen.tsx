@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   User,
   Home,
@@ -25,6 +25,7 @@ interface MehrScreenProps {
   onSignOut: () => void;
   user: { id: string } | null;
   householdId: string | null;
+  onRegisterReset?: (fn: () => void) => void;
 }
 
 function isPwa(): boolean {
@@ -60,7 +61,7 @@ function useTheme() {
   return { isDark, toggle: () => setIsDark((p) => !p) };
 }
 
-export function MehrScreen({ onSignOut, user, householdId }: MehrScreenProps) {
+export function MehrScreen({ onSignOut, user, householdId, onRegisterReset }: MehrScreenProps) {
   const { isDark, toggle } = useTheme();
   const [showHouseholdSettings, setShowHouseholdSettings] = useState(false);
   const [showProfilScreen, setShowProfilScreen] = useState(false);
@@ -72,6 +73,15 @@ export function MehrScreen({ onSignOut, user, householdId }: MehrScreenProps) {
   useBackHandler(showProfilScreen, () => setShowProfilScreen(false));
   useBackHandler(showAboutScreen, () => setShowAboutScreen(false));
   useBackHandler(showMeineArtikel, () => setShowMeineArtikel(false));
+
+  // ── Tab-Reset: zurück zur Mehr-Hauptansicht ───────────────────
+  const handleReset = useCallback(() => {
+    setShowHouseholdSettings(false);
+    setShowProfilScreen(false);
+    setShowAboutScreen(false);
+    setShowMeineArtikel(false);
+  }, []);
+  useEffect(() => { onRegisterReset?.(handleReset); }, [onRegisterReset, handleReset]);
 
   // ── Notification permission state ────────────────────────────────
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | null>(() => {

@@ -163,7 +163,7 @@ const DEFAULT_CONTENTS: PageContents = Object.fromEntries(
 
 // ── Main Component ───────────────────────────────────────────────────
 
-export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}) {
+export function ListenScreen({ openPageId, onRegisterReset }: { openPageId?: string | null; onRegisterReset?: (fn: () => void) => void } = {}) {
   const { householdId } = useAuth();
   const [pages, setPages] = useState<Page[]>([]);
   const [pageContents, setPageContents] = useState<PageContents>({});
@@ -186,6 +186,17 @@ export function ListenScreen({ openPageId }: { openPageId?: string | null } = {}
   useBackHandler(!!contextMenu, () => setContextMenu(null));
   useBackHandler(!!emojiPickerPageId, () => setEmojiPickerPageId(null));
   useBackHandler(!!deleteConfirmPageId, () => setDeleteConfirmPageId(null));
+
+  // ── Tab-Reset: zurück zur Seitenliste ─────────────────────────
+  const handleReset = useCallback(() => {
+    setActivePageId(null);
+    setSidebarOpen(false);
+    setContextMenu(null);
+    setEmojiPickerPageId(null);
+    setDeleteConfirmPageId(null);
+    setRenamingPageId(null);
+  }, []);
+  useEffect(() => { onRegisterReset?.(handleReset); }, [onRegisterReset, handleReset]);
 
   // ── Save helpers ───────────────────────────────────────────────
   const saveData = useCallback(async (p: Page[], c: PageContents) => {

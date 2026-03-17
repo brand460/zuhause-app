@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "./auth-context";
 import {
   Calendar,
@@ -52,7 +52,12 @@ export function MainShell() {
   const { signOut, user, householdId } = useAuth();
   const [activeTab, setActiveTab] = useSessionState<TabId>("app_active_tab", "einkaufen");
   const [einkaufenCount, setEinkaufenCount] = useState(0);
-  // stableHeight removed — layout is now CSS-only, no JS-driven height
+
+  // ── Tab-Reset: jeder Screen registriert seine Reset-Funktion hier ──
+  const resetTabRef = useRef<(() => void) | null>(null);
+  const handleRegisterReset = useCallback((fn: () => void) => {
+    resetTabRef.current = fn;
+  }, []);
 
   // ── Global scroll-to-focused: stellt sicher dass das fokussierte Element
   //    immer über der Tastatur sichtbar ist, egal in welchem Drawer. ──────
@@ -280,17 +285,18 @@ export function MainShell() {
                 onNavigate={handleNavigate}
                 openEventId={deepLinkEventId}
                 onDeepLinkHandled={() => setDeepLinkEventId(null)}
+                onRegisterReset={handleRegisterReset}
               />
             </div>
           )}
           {visitedTabs.has("einkaufen") && (
             <div className={`absolute inset-0 flex flex-col overflow-hidden ${activeTab === "einkaufen" ? "" : "hidden"}`}>
-              <EinkaufenScreen onItemCountChange={setEinkaufenCount} />
+              <EinkaufenScreen onItemCountChange={setEinkaufenCount} onRegisterReset={handleRegisterReset} />
             </div>
           )}
           {visitedTabs.has("listen") && (
             <div className={`absolute inset-0 flex flex-col overflow-hidden ${activeTab === "listen" ? "" : "hidden"}`}>
-              <ListenScreen openPageId={deepLinkPageId} />
+              <ListenScreen openPageId={deepLinkPageId} onRegisterReset={handleRegisterReset} />
             </div>
           )}
           {visitedTabs.has("kochen") && (
@@ -299,12 +305,13 @@ export function MainShell() {
                 openRecipeId={deepLinkRecipeId}
                 sharedText={sharedText}
                 onSharedTextConsumed={() => setSharedText(null)}
+                onRegisterReset={handleRegisterReset}
               />
             </div>
           )}
           {visitedTabs.has("mehr") && (
             <div className={`absolute inset-0 flex flex-col overflow-hidden ${activeTab === "mehr" ? "" : "hidden"}`}>
-              <MehrScreen onSignOut={signOut} user={user} householdId={householdId} />
+              <MehrScreen onSignOut={signOut} user={user} householdId={householdId} onRegisterReset={handleRegisterReset} />
             </div>
           )}
         </div>
@@ -339,7 +346,13 @@ export function MainShell() {
               return (
                 <button
                   key={tab.id}
-                  onClick={() => handleTabChange(tab.id)}
+                  onClick={() => {
+                    if (tab.id === activeTab) {
+                      resetTabRef.current?.();
+                    } else {
+                      handleTabChange(tab.id);
+                    }
+                  }}
                   className="relative flex items-center justify-center w-12 h-12 transition"
                 >
                   {isActive && (

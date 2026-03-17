@@ -2733,8 +2733,9 @@ function CategoryPickerModal({
           </div>
         </div>
         <div
-          className="flex-1 overflow-y-auto px-5 pb-5 min-h-0"
+          className="flex-1 overflow-y-auto px-5 min-h-0"
           style={{
+            paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)",
             overscrollBehavior: "contain",
             touchAction: "pan-y",
             scrollBehavior: "smooth",
@@ -2884,7 +2885,7 @@ function AddStoreModal({
             )}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 pb-5 min-h-0" style={{ scrollBehavior: "smooth" }}>
+        <div className="flex-1 overflow-y-auto px-5 min-h-0" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)", scrollBehavior: "smooth" }}>
           <div className="space-y-1">
             {filtered.map((s) => {
               const logoUrl = s.domain
@@ -3054,8 +3055,10 @@ function useIsDesktop() {
 // ── Main Einkaufen Screen ──────────────────────────────────────────
 export function EinkaufenScreen({
   onItemCountChange,
+  onRegisterReset,
 }: {
   onItemCountChange?: (count: number) => void;
+  onRegisterReset?: (fn: () => void) => void;
 }) {
   const { householdId } = useAuth();
   const isDesktop = useIsDesktop();
@@ -3553,6 +3556,16 @@ export function EinkaufenScreen({
   useBackHandler(showAddStore, () => setShowAddStore(false));
   useBackHandler(!!popover, () => setPopover(null));
   useBackHandler(!!categorySortStore, () => setCategorySortStore(null));
+
+  // ── Tab-Reset: zurück zur Hauptliste ──────────────────────────
+  const handleReset = useCallback(() => {
+    setQuantityDrawerItemId(null);
+    setShowAddStore(false);
+    setPopover(null);
+    setCategorySortStore(null);
+    setStoreReorderMode(false);
+  }, []);
+  useEffect(() => { onRegisterReset?.(handleReset); }, [onRegisterReset, handleReset]);
 
   const handleAddItem = useCallback(
     (name: string, category: string) => {

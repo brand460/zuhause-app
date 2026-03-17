@@ -105,6 +105,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const profileChannelRef = useRef<RealtimeChannel | null>(null);
   const signOutFlagRef = useRef<() => void>(() => {});
 
+  // True only during the very first getSession() call — prevents the loading
+  // overlay from appearing on every subsequent app-resume / token-refresh.
+  const isInitialLoad = useRef(true);
+
   // Ensure profile exists and is up-to-date with auth metadata
   async function ensureProfile(authUser: User) {
     const displayName =
@@ -277,10 +281,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (s?.user) {
         // Ensure profile is synced on app load
         ensureProfile(s.user).finally(() =>
-          loadProfile(s.user!.id).finally(() => setLoading(false))
+          loadProfile(s.user!.id).finally(() => {
+            setLoading(false);
+            isInitialLoad.current = false;
+          })
         );
       } else {
         setLoading(false);
+        isInitialLoad.current = false;
       }
     });
 
@@ -291,7 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log("[Auth] Event:", event, "session:", !!s);
 
       if (event === "TOKEN_REFRESHED" && s) {
-        // Persist the refreshed token immediately
+        // Persist the refreshed token immediately — no loading state change
         try {
           localStorage.setItem("zuhause-supabase-auth", JSON.stringify(s));
         } catch (_) { /* storage full or unavailable */ }
@@ -340,9 +348,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(s);
       setUser(s?.user ?? null);
       if (s?.user) {
-        if (event === "SIGNED_IN") {
+        // Only block the UI with isLoadingHousehold on the very first login —
+        // not on subsequent resume/re-auth events (isInitialLoad is false by then).
+        if (event === "SIGNED_IN" && isInitialLoad.current) {
           setIsLoadingHousehold(true);
         }
+        // Always refresh profile in the background (silently on resume)
         ensureProfile(s.user).finally(() =>
           loadProfile(s.user!.id).finally(() => setIsLoadingHousehold(false))
         );

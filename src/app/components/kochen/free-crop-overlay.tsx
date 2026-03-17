@@ -543,7 +543,7 @@ export function FreeCropOverlay({
       {/* Buttons */}
       <div
         className="flex gap-3 px-4 flex-shrink-0"
-        style={{ paddingBottom: "max(env(safe-area-inset-bottom), 16px)", paddingTop: 8 }}
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)", paddingTop: 8 }}
       >
         <button
           className="flex-1 py-3 rounded-2xl text-sm font-semibold"

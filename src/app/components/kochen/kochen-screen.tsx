@@ -156,10 +156,11 @@ function emptyRecipe(): Recipe {
 // MAIN KOCHEN SCREEN
 // ══════════════════════════════════════════════════════════════════════
 
-export function KochenScreen({ openRecipeId, sharedText, onSharedTextConsumed }: {
+export function KochenScreen({ openRecipeId, sharedText, onSharedTextConsumed, onRegisterReset }: {
   openRecipeId?: string | null;
   sharedText?: string | null;
   onSharedTextConsumed?: () => void;
+  onRegisterReset?: (fn: () => void) => void;
 } = {}) {
   const { householdId, householdMembers } = useAuth();
   // ── State ──────────────────────────────────────────────────────────
@@ -278,6 +279,33 @@ export function KochenScreen({ openRecipeId, sharedText, onSharedTextConsumed }:
   useBackHandler(showEditEntrySheet, () => setShowEditEntrySheet(false));
   useBackHandler(showIngredientsModal, () => { setShowIngredientsModal(false); setIngredientsRecipe(null); });
   useBackHandler(!!deleteConfirm, () => setDeleteConfirm(null));
+
+  // ── Tab-Reset: zurück zur Rezepte-Hauptansicht ────────────────
+  const handleReset = useCallback(() => {
+    // Manuell gepushte Back-Handler für Rezept-Navigation entfernen
+    const depth = recipeNavDepthRef.current;
+    for (let i = 0; i < depth; i++) popBack();
+    recipeNavDepthRef.current = 0;
+    // Zur Hauptansicht zurück
+    setActiveView("main");
+    setSelectedRecipeId(null);
+    setEditRecipe(null);
+    // Alle offenen Drawers/Modals schließen
+    setShowAddSheet(false);
+    setShowUrlImport(false);
+    setUrlInput("");
+    setShowTextImport(false);
+    setTextInput("");
+    setPhotoCropSrc(null);
+    setShowMealPicker(false);
+    setMealPickerDate(null);
+    setEntryPopover(null);
+    setShowEditEntrySheet(false);
+    setShowIngredientsModal(false);
+    setIngredientsRecipe(null);
+    setDeleteConfirm(null);
+  }, []);
+  useEffect(() => { onRegisterReset?.(handleReset); }, [onRegisterReset, handleReset]);
 
   // ── Shared text from Web Share Target ─────────────────────────────
   useEffect(() => {
@@ -1603,7 +1631,7 @@ Extraktionsregeln:
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => { setShowMealPicker(false); setMealPickerDate(null); }} />
             <motion.div
-              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] flex flex-col"
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[calc(env(safe-area-inset-bottom,0px)+16px)] flex flex-col"
               style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)', bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
@@ -1731,7 +1759,7 @@ Extraktionsregeln:
                     </div>
                   </div>
                   {/* Recipe list */}
-                  <div className="flex-1 overflow-y-auto px-4">
+                  <div className="flex-1 overflow-y-auto px-4 pb-4">
                     {recipes
                       .filter((r) =>
                         !mealPickerSearch.trim() || r.title.toLowerCase().includes(mealPickerSearch.toLowerCase())
@@ -1842,7 +1870,7 @@ Extraktionsregeln:
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => setShowAddSheet(false)} />
             <motion.div
-              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[calc(env(safe-area-inset-bottom,0px)+16px)] p-5"
               style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)', bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
@@ -1940,7 +1968,7 @@ Extraktionsregeln:
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => { setShowUrlImport(false); setUrlInput(""); }} />
             <motion.div
-              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[calc(env(safe-area-inset-bottom,0px)+16px)] p-5"
               style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)', bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
@@ -1993,7 +2021,7 @@ Extraktionsregeln:
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => { if (!textExtracting) { setShowTextImport(false); setTextInput(""); } }} />
             <motion.div
-              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[calc(env(safe-area-inset-bottom,0px)+16px)] p-5"
               style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-elevated)', bottom: bottomOffset, maxHeight: vpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
@@ -4035,7 +4063,7 @@ function RecipeEditView({
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => setShowImageSheet(false)} />
             <motion.div
-              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[calc(env(safe-area-inset-bottom,0px)+16px)] p-5"
               style={{ background: "var(--surface)", boxShadow: "var(--shadow-elevated)", bottom: editBottomOffset, maxHeight: editVpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
@@ -4107,7 +4135,7 @@ function RecipeEditView({
           >
             <div className="absolute inset-0 bg-black/40" onClick={() => { setShowUrlInput(false); setImageUrlDraft(""); }} />
             <motion.div
-              className="absolute left-0 right-0 rounded-t-[20px] pb-[env(safe-area-inset-bottom)] p-5"
+              className="absolute left-0 right-0 rounded-t-[20px] pb-[calc(env(safe-area-inset-bottom,0px)+16px)] p-5"
               style={{ background: "var(--surface)", boxShadow: "var(--shadow-elevated)", bottom: editBottomOffset, maxHeight: editVpHeight - 72 }}
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               transition={DRAWER_SPRING}
@@ -4197,7 +4225,7 @@ function IngredientsModal({
     >
       <div className="absolute inset-0 bg-black/40" onClick={onSkip} />
       <motion.div
-        className="absolute left-0 right-0 bg-surface rounded-t-[20px] pb-[env(safe-area-inset-bottom)] flex flex-col"
+        className="absolute left-0 right-0 bg-surface rounded-t-[20px] pb-[calc(env(safe-area-inset-bottom,0px)+16px)] flex flex-col"
         style={{ boxShadow: "var(--shadow-elevated)", bottom: ingBottomOffset, maxHeight: ingVpHeight - 72 }}
         initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
         transition={DRAWER_SPRING}
@@ -4244,7 +4272,7 @@ function IngredientsModal({
           </select>
         </div>
 
-        <div className="flex gap-3 px-4 pb-4 flex-shrink-0">
+        <div className="flex gap-3 px-4 pb-0 flex-shrink-0">
           <button onClick={onSkip} className="flex-1 py-2.5 rounded-xl bg-surface-2 text-sm font-medium text-text-2">
             Überspringen
           </button>

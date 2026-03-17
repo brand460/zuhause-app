@@ -519,10 +519,11 @@ function useIsDesktop() {
 
 // ── Main Component ─────────────────────────────────────────────────
 
-export function KalenderScreen({ onNavigate, openEventId, onDeepLinkHandled }: {
+export function KalenderScreen({ onNavigate, openEventId, onDeepLinkHandled, onRegisterReset }: {
   onNavigate?: (tab: string, itemId?: string | null) => void;
   openEventId?: string | null;
   onDeepLinkHandled?: () => void;
+  onRegisterReset?: (fn: () => void) => void;
 } = {}) {
   const { householdId, householdMembers: authMembers } = useAuth();
   const isDesktop = useIsDesktop();
@@ -688,6 +689,15 @@ export function KalenderScreen({ onNavigate, openEventId, onDeepLinkHandled }: {
   // ── Back-gesture handlers for drawers/modals ──────────────────
   useBackHandler(showEditor, () => { setShowEditor(false); setEditingEvent(null); });
   useBackHandler(showRecurringPrompt, () => { setShowRecurringPrompt(false); setPendingEdit(null); });
+
+  // ── Tab-Reset: zurück zur Kalender-Hauptansicht ───────────────
+  const handleReset = useCallback(() => {
+    setShowEditor(false);
+    setEditingEvent(null);
+    setShowRecurringPrompt(false);
+    setPendingEdit(null);
+  }, []);
+  useEffect(() => { onRegisterReset?.(handleReset); }, [onRegisterReset, handleReset]);
 
   // ── Deep-Link: Event per Push-Notification öffnen ─────────────
   useEffect(() => {
