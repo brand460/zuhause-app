@@ -458,7 +458,7 @@ app.patch("/make-server-2a26506b/global-items", async (c) => {
   }
 });
 
-// ── Custom pages (Notion-like editor) ──────────────────────────────
+// ── Custom pages (Notion-like editor) ──────────��───────────────────
 
 // GET all pages for a household
 app.get("/make-server-2a26506b/custom-pages", async (c) => {
@@ -1455,7 +1455,7 @@ app.post("/make-server-2a26506b/send-notifications", async (c) => {
               include_player_ids: playerIds,
               headings: { de: target.title, en: target.title },
               contents: { de: timeStr, en: timeStr },
-              url: `https://zuhause-app.vercel.app/?tab=kalender&event=${target.eventId}`,
+              url: `https://tuli-app.vercel.app/?tab=kalender&event=${target.eventId}`,
             }),
           });
 
